@@ -2,6 +2,11 @@
 
 **A framework that trains an AI to speak, answer, and think like *you*.**
 
+> ⚠️ **Built with AI.** This project was designed and written with AI assistance
+> (Anthropic's Claude). It has been reviewed and tested, but treat it as a
+> starting point: read the code before running it on your own data, and treat the
+> privacy and security notes below as guidance, not guarantees.
+
 Mirror is an end-to-end pipeline, driven by [Claude skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview), that:
 
 1. **Connects** to where your words already live — email, iMessage, WhatsApp, Telegram, Slack, Discord, Instagram, SMS, and more.
