@@ -1,4 +1,4 @@
-# Mirror 🪞
+# Mirror 
 
 **A framework that trains an AI to speak, answer, and think like *you*.**
 
