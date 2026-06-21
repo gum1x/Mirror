@@ -1,0 +1,21 @@
+# Mirror dependencies.
+#
+# The CORE pipeline is STDLIB-ONLY — every connector + normalize/scrub/build/
+# persona script runs with NOTHING installed. This file installs the lightweight
+# deps for the cloud paths (A/B) and helpers; everything here actually installs
+# (no environment markers that pip silently skips).
+#
+# Prefer the grouped extras in pyproject.toml when you can:
+#   pip install ".[openai]"   ".[rag]"   ".[lora]"   ".[anthropic]"   ".[cloud]"
+
+anthropic>=0.40.0           # Path A (Claude persona + RAG) + eval LLM-judge
+openai>=1.40.0              # Path B (OpenAI fine-tune SFT/DPO)
+sentence-transformers>=3.0  # semantic RAG (mirror_chat.py --semantic) — optional
+numpy>=1.26                 # semantic RAG
+pyyaml>=6.0                 # optional: parse mirror.config.yaml
+
+# Path C (local QLoRA) needs a heavy GPU stack — install it separately:
+#   pip install ".[lora]"
+# or, recommended, Unsloth (pins a compatible torch/transformers/peft/trl);
+# PIN the commit for supply-chain safety:
+#   pip install "unsloth[cu121] @ git+https://github.com/unslothai/unsloth.git@<commit-sha>"

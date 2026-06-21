@@ -1,0 +1,24 @@
+# Your private data and trained artifacts never get committed.
+# NOTE: these are anchored to the repo root with a leading "/" so they only match
+# the top-level output dirs — NOT source dirs like scripts/persona or scripts/eval.
+/data/
+/persona/
+/adapters/
+/eval/
+/exports/
+*.mbox
+
+# Generated datasets (but always ship the bundled sample).
+*.jsonl
+!examples/*.jsonl
+
+# The user's real config, ignored at any depth (privacy). The committed template
+# is config/mirror.config.example.yaml, which is NOT matched by this.
+mirror.config.yaml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
