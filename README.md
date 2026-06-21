@@ -2,8 +2,6 @@
 
 Self-hosted clone of your own writing voice. It pulls your real messages from the apps you already use (iMessage, WhatsApp, Telegram, Gmail, Slack, Discord, Instagram, SMS), normalizes them into one format, looks at how you actually write (length, punctuation, emoji, slang, the way you explain things), picks a training method that fits your data and privacy, trains it, and checks how close it sounds to you on conversations it never saw. The goal is something that texts in your cadence and answers the way you would, grounded in what you've actually said.
 
-No data broker. No cloud upload you didn't approve. Your machine, your messages, the apps' own export files.
-
 9 skills, 17 runnable scripts, no dependencies for the core pipeline.
 
 > Built with AI assistance (Anthropic's Claude). It has been reviewed and tested, but read the code before running it on your own data, and treat the privacy notes as guidance rather than a guarantee.
