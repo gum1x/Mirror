@@ -21,9 +21,15 @@ Both export to JSON. Both are chatty and casual — good for the `autoreply` and
 - `ts` is a Unix epoch (seconds) string.
 - Text contains `<@U123>` mentions and `<url|label>` links → normalize.
 
-**Parse:** use the generic JSON importer pattern (point the formatter at the
-folder); flag `is_from_me` where `user == <your Slack user id>`. Find your id in
-`users.json` by matching your name/email.
+**Parse:**
+```bash
+python scripts/connectors/slack_parse.py exports/slack --me "Sam Rivera" -o data/raw/slack.jsonl
+# most reliable — by id:  --me-id U012ABCDEF
+```
+The parser loads `users.json`, resolves your user id from `--me` (name/email) or
+`--me-id`, rewrites `<@U123>` mentions and `<url|label>` links to readable text,
+and skips join/system (`subtype`) messages. If it can't resolve your id it warns
+and flags 0 of your messages — pass `--me-id` then.
 
 ## Discord
 
@@ -42,23 +48,23 @@ Structure:
   ]
 }
 ```
-- Flag `is_from_me` where `author.id == <your Discord user id>` (stable) or
-  `author.name == <your handle>`.
-- Skip system messages (`type` other than `Default`/`Reply`), embeds-only, and
-  empty content.
+**Parse:**
+```bash
+python scripts/connectors/discord_parse.py exports/discord --me-id 123456789012345678 \
+    -o data/raw/discord.jsonl
+# or by handle:  --me "sam"
+```
+Point it at a single `.json` or a folder of them. It flags `is_from_me` by
+`author.id == --me-id` (stable) or username/nickname match, skips non
+`Default`/`Reply` messages and empty content, and uses the channel name as the
+conversation id.
 
-## Importing either
-
-Both are close enough to the unified schema that the formatter's generic importer
-handles them. In `mirror-data-formatting`, map fields:
+## Field mapping (for reference / custom adapters)
 
 | Unified | Slack | Discord |
 |---------|-------|---------|
-| `text` | `text` (resolve mentions/links) | `content` |
+| `text` | `text` (mentions/links resolved) | `content` |
 | `is_from_me` | `user == my_id` | `author.id == my_id` |
 | `timestamp` | `ts` (epoch s) | `timestamp` (ISO) |
 | `sender` | `users.json[user].name` | `author.nickname or .name` |
 | `conversation_id` | channel/DM name | channel/DM name |
-
-If you prefer a dedicated script, copy `telegram_parse.py` as a template — the
-shape is nearly identical.

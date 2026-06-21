@@ -60,8 +60,10 @@ Mirror is meant to be *driven by Claude*. The fastest path:
 # 1. Install the skills (Claude Code)
 cp -r skills/* ~/.claude/skills/
 
-# 2. Install Python deps for the scripts
-pip install -r requirements.txt
+# 2. The core pipeline (ingest → format → persona) is STDLIB-ONLY — no install.
+#    For a training/serving path, install just that path's deps:
+pip install ".[cloud]"      # Paths A & B: Claude + OpenAI + semantic RAG
+#   pip install ".[lora]"   # Path C: local QLoRA (heavy GPU stack)
 
 # 3. In Claude Code (or Claude.ai with the Agent Skills), say:
 /mirror
@@ -73,13 +75,19 @@ The `mirror` skill takes it from there — it interviews you, walks you through 
 # Parse a WhatsApp export into the unified schema
 python scripts/connectors/whatsapp_parse.py "WhatsApp Chat with Alex.txt" --me "Sam" -o data/raw/whatsapp.jsonl
 
-# Build a training dataset (your messages become the assistant's voice)
-python scripts/format/build_dataset.py data/raw/*.jsonl --format openai-chat -o data/train.jsonl
+# Clean + scrub PII (always scrub before any upload)
+python scripts/format/normalize.py data/raw/*.jsonl --dedup -o data/clean.jsonl
+python scripts/format/pii_scrub.py data/clean.jsonl -o data/scrubbed.jsonl
 
-# Analyze your voice into a style card
-python scripts/persona/style_analyze.py data/raw/*.jsonl -o persona/
+# Analyze your voice into a style card (it becomes the system prompt)
+python scripts/persona/style_analyze.py data/scrubbed.jsonl --name "Sam" -o persona/
 
-# ...then train (Path A/B/C), evaluate, and serve.
+# Build a training dataset — your messages become the assistant's voice;
+# sessions split on a 6h gap, eval is decontaminated, a dataset card is written
+python scripts/format/build_dataset.py data/scrubbed.jsonl --format openai-chat \
+    --system-file persona/style_card.md --holdout 0.1 -o data/train.jsonl
+
+# ...then choose a path, train (A/B/C), evaluate, and serve.
 ```
 
 See [`skills/mirror/SKILL.md`](skills/mirror/SKILL.md) for the full orchestration and [`docs map`](#repository-map) below.
@@ -131,7 +139,7 @@ examples/      sample_messages.jsonl
 
 ## The data contract
 
-Everything flows through one schema (the **unified message record**), defined and validated in [`scripts/lib/schema.py`](scripts/lib/schema.py). Connectors emit it; everything downstream consumes it. One JSON object per line:
+Everything flows through one schema (the **unified message record**), defined and sanity-checked in [`scripts/lib/schema.py`](scripts/lib/schema.py). Connectors emit it; everything downstream consumes it. One JSON object per line:
 
 ```json
 {"source":"whatsapp","conversation_id":"Alex","timestamp":"2024-03-05T21:41:12Z","sender":"me","is_from_me":true,"text":"running 5 min late lol","reply_to":null,"media":null}
@@ -139,4 +147,49 @@ Everything flows through one schema (the **unified message record**), defined an
 
 ---
 
-Built as a demonstration of composing many Claude skills into a real pipeline. Use it on your own data, for yourself.
+## Prior art & how Mirror compares
+
+Cloning yourself from chat history is a well-trodden space. Mirror is designed to
+be broader and more rigorous than the typical single-source weekend project.
+
+| Project | Source(s) | Method | Eval | Notes |
+|---------|-----------|--------|------|-------|
+| [WeClone](https://github.com/xming521/WeClone) (~17k★) | WeChat, Telegram | LoRA SFT (LLaMA-Factory) | demo UI + fixed Q file | The category leader; also scrubs PII (Presidio) |
+| [ai-clone-whatsapp](https://github.com/kinggongzilla/ai-clone-whatsapp) | WhatsApp | QLoRA (ShareGPT) | — | Clean single-source reference |
+| [WhatsApp-Llama](https://github.com/Ads97/WhatsApp-Llama) | WhatsApp | QLoRA | informal Turing test (caught 2/20) | The "Show HN" build |
+| [doppelganger](https://github.com/furiousteabag/doppelganger) | Telegram | LoRA | — | **10-min session windowing** |
+| [imessage-lm](https://github.com/Dynosol/imessage-lm) | iMessage | LoRA (Unsloth) | — | MIT |
+| [lad-gpt](https://github.com/bernhard-pfann/lad-gpt) | WhatsApp | transformer from scratch | informal | nanoGPT-style |
+| [Izzy Miller — "robo-boys"](https://www.izzy.co/blogs/robo-boys.html) | iMessage (488k msgs) | Alpaca full FT | informal | **4-hr session windowing** |
+| [Edward Donner — 240k msgs](https://edwarddonner.com/2024/01/02/fine-tuning-an-llm-on-240k-text-messages/) | iMessage+WhatsApp | QLoRA | Turing-ish | documents the "mundane loop" failure mode |
+
+Tooling everyone builds on: [Unsloth](https://github.com/unslothai/unsloth),
+[LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory),
+[Axolotl](https://github.com/axolotl-ai-cloud/axolotl).
+
+**What Mirror adds over the field:** multi-connector ingestion into one schema
+(everyone else is single-source); principled **path selection** (prompt+RAG vs
+SFT vs DPO vs QLoRA by use case/privacy/budget — nobody else reasons about this);
+a real **quantitative eval** with a conversation-level holdout (the field stops at
+an informal Turing test); and an explicit **privacy/egress contract**.
+
+**Best practices Mirror also implements** (borrowed from the projects above and
+the wider community): time-gap **session windowing** (`--session-gap-minutes`, à
+la doppelganger/Izzy Miller), train/eval **decontamination**, **dataset cards**
+for provenance/reproducibility, seeded splits, consecutive-message merging, and
+ShareGPT/OpenAI-chat/ChatML/DPO format support. See
+[`skills/mirror-model-selection/references/`](skills/mirror-model-selection/references/)
+for the research behind the defaults.
+
+## Engineering
+
+- **Tested:** `tests/test_pipeline.py` runs the stdlib pipeline end-to-end and
+  pins regressions (run `python tests/test_pipeline.py` or `pytest`); CI runs it
+  on every push.
+- **Installable extras:** `pyproject.toml` carries per-path optional dependencies
+  (`.[cloud]`, `.[lora]`, …); the core needs nothing.
+
+---
+
+Built as a demonstration of composing many Claude skills into a real, reviewed
+pipeline. Use it on your own data, for yourself.

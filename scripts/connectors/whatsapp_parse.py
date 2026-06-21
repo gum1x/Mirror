@@ -31,25 +31,16 @@ LINE_RE = re.compile(
     r"(?P<rest>.*)$"
 )
 
-# System lines (no real sender) we drop even when they parse as a message.
-SYSTEM_MARKERS = (
-    "Messages and calls are end-to-end encrypted",
-    "You deleted this message",
-    "This message was deleted",
-    "<Media omitted>",
-    "image omitted",
-    "video omitted",
-    "audio omitted",
-    "GIF omitted",
-    "sticker omitted",
-    "document omitted",
-    "Contact card omitted",
-    "changed the subject",
-    "changed this group's icon",
-    "added", "removed", "left", "joined using",
-    "created group", "changed their phone number",
-    "Your security code with", "Tap to learn more",
-    "‎",  # lone LTR/format marker lines
+# A message whose WHOLE body is one of these is a placeholder we drop. We match
+# the entire line (not a substring) so a real message that merely contains the
+# word "left" / "added" / "omitted" is never discarded. Senderless lines
+# (group-event notices like "Sam added Alex") are dropped separately, by the
+# absence of a sender, so we don't need to enumerate every notice here.
+_PLACEHOLDER_RE = re.compile(
+    r"(?:<\s*Media omitted\s*>"
+    r"|(?:image|video|audio|GIF|sticker|document|Contact card|GIF) omitted"
+    r"|This message was deleted|You deleted this message|null)",
+    re.IGNORECASE,
 )
 
 
@@ -96,9 +87,10 @@ def _parse_dt(date_s: str, time_s: str, dayfirst: bool) -> Optional[str]:
         return None
 
 
-def _is_system(text: str) -> bool:
+def _is_droppable(text: str) -> bool:
+    """A message body that's empty or a pure media/deleted placeholder."""
     t = text.strip()
-    return (not t) or any(mark in t for mark in SYSTEM_MARKERS)
+    return (not t) or bool(_PLACEHOLDER_RE.fullmatch(t))
 
 
 def _convo_from_filename(path: str) -> str:
@@ -116,7 +108,10 @@ def parse_file(path: str, me: list[str], dayfirst: bool) -> Iterator[MessageReco
         if not cur:
             return None
         text = cur["text"].strip()
-        if _is_system(text) or not cur["sender"]:
+        # No sender ⇒ a senderless system notice (encryption, group events, etc.).
+        # Otherwise drop only empty or pure-placeholder bodies — never a real
+        # message that happens to contain a word like "added" or "left".
+        if not cur["sender"] or _is_droppable(text):
             return None
         is_me = cur["sender"].lower() in me_lower
         return MessageRecord(

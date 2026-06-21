@@ -35,9 +35,11 @@ provide exact steps, they hand you a file, you run the parser.
 | Telegram | `references/telegram.md` | `scripts/connectors/telegram_parse.py` | Easy (Desktop → JSON, full history) |
 | iMessage / SMS (macOS) | `references/imessage.md` | `scripts/connectors/imessage_extract.py` | Medium (reads `chat.db`, needs Full Disk Access) |
 | Gmail / Outlook | `references/gmail.md` | `scripts/connectors/gmail_mbox_parse.py` | Medium (Takeout → mbox; **Sent** mail only) |
-| Slack / Discord | `references/slack-discord.md` | `scripts/connectors/*` (JSON) | Medium |
+| Slack | `references/slack-discord.md` | `scripts/connectors/slack_parse.py` | Medium (workspace export JSON) |
+| Discord | `references/slack-discord.md` | `scripts/connectors/discord_parse.py` | Medium (DiscordChatExporter JSON) |
 | Instagram / Messenger | `references/sms-signal-instagram.md` | `scripts/connectors/instagram_parse.py` | Medium (Meta data download → JSON) |
-| SMS (Android) / Signal | `references/sms-signal-instagram.md` | (XML / desktop backup) | Medium–Hard |
+| SMS (Android) | `references/sms-signal-instagram.md` | `scripts/connectors/sms_xml_parse.py` | Medium (SMS Backup & Restore XML) |
+| Signal | `references/sms-signal-instagram.md` | manual — bring pre-converted JSONL | Hard (encrypted DB) |
 
 ### Live MCP connectors (optional)
 
@@ -46,6 +48,20 @@ If the session has Gmail / Google Drive MCP tools available, you can pull recent
 user's sent mail, then write each as a `MessageRecord` with `is_from_me=true`.
 Use this for a quick start; Takeout is still better for *full* history. Always
 confirm with the user before reading their live mailbox.
+
+### Legal, consent & ToS (tell the user)
+
+- **Only your own accounts.** Export from accounts you own and control.
+- **Personal use is the safe lane.** Most platforms' terms allow you to fine-tune
+  a model on your own exported data for your **own exclusive use**, but prohibit
+  using exported chats to train or improve **third-party** models or products.
+  Keep your Mirror personal; don't redistribute other people's messages.
+- **Group chats include other people.** Mirror only trains on *your* messages
+  (others' are context), but you're still handling their words — don't publish a
+  dataset of them, and don't deploy a Mirror that impersonates you to deceive
+  them. Get consent before pointing a Mirror at a real conversation.
+- **Export may be blocked.** Some privacy settings (e.g. WhatsApp's Advanced Chat
+  Privacy) disable chat export — if "Export Chat" is greyed out, that's why.
 
 ## The one rule every parser follows: who is "me"?
 

@@ -41,10 +41,12 @@ scrub anything you wouldn't want in retrieval results.
 
 ## 3. Build the dataset
 
-The builder groups messages by conversation, sorts by time, **merges
-consecutive messages from the same person into one turn** (people fire off
-several texts in a row), then makes examples where **your** turn is the target
-the model learns to produce, given the preceding context.
+The builder groups messages by conversation, **splits each into sessions on a
+time gap** (so a context window never straddles a 3-week silence), sorts by time,
+**merges consecutive messages from the same person into one turn** (people fire
+off several texts in a row), then makes examples where **your** turn is the
+target the model learns to produce, given the preceding context. It also writes a
+`DATASET_CARD.md` next to the output recording provenance and settings.
 
 Pick the format for the chosen path:
 
@@ -52,10 +54,10 @@ Pick the format for the chosen path:
 # Path B (OpenAI SFT) — chat JSONL
 python scripts/format/build_dataset.py data/scrubbed.jsonl \
     --format openai-chat --system-file persona/style_card.md \
-    --context-turns 6 --max-per-convo 400 \
+    --context-turns 6 --session-gap-minutes 360 --max-per-convo 400 \
     --holdout 0.1 -o data/train.jsonl   # also writes data/eval.jsonl
 
-# Path C (local LoRA) — ShareGPT
+# Path C (local LoRA) — ShareGPT (or --format chatml for ChatML-native trainers)
 python scripts/format/build_dataset.py data/scrubbed.jsonl \
     --format sharegpt --system-file persona/style_card.md -o data/train.json
 
@@ -67,12 +69,19 @@ python scripts/format/build_dataset.py data/scrubbed.jsonl \
 Key flags:
 - `--context-turns N` — how much prior conversation each example carries (more =
   better grounding, larger/pricier examples). 4–8 is a good range.
+- `--session-gap-minutes N` — start a new session when consecutive messages are
+  >N min apart (default 360 = 6h; `0` disables). Keeps context coherent; a
+  de-facto standard in this space (doppelganger uses 10 min, Izzy Miller 4 h).
 - `--max-per-convo N` — cap examples from any single conversation so one chatty
   thread doesn't swamp your voice. Recommended for fine-tunes.
 - `--min-target-chars N` — skip trivially short replies ("k", "lol") if you want
   the model to learn substantive responses; keep them for an autoreply Mirror.
-- `--holdout R` — split a fraction of *whole conversations* into `*_eval.jsonl`
-  (never split mid-conversation — that leaks). Feeds `mirror-evaluation`.
+- `--holdout R` — split a fraction of *whole conversations* into the eval file
+  (the builder prints the exact path it wrote, e.g. `data/eval.jsonl`). Never
+  splits mid-conversation. Feeds `mirror-evaluation`.
+- `--no-decontaminate` — by default eval examples whose reply also appears in
+  train are dropped (so recurring "omw"/"lol" replies don't inflate the score);
+  pass this to keep them.
 - `--mode reply` (default) needs a preceding message; `--mode autocomplete`
   builds next-passage examples from your writing alone (for `journaling`).
 

@@ -31,9 +31,10 @@ python scripts/serve/mirror_chat.py --path C \
     --style-card persona/style_card.md --corpus data/scrubbed.jsonl --rag
 ```
 
-Type to chat; the Mirror replies in the user's voice. `--no-rag` to disable
-retrieval; `--semantic` for embedding-based retrieval (needs sentence-transformers);
-`--k 6` to tune how many of the user's real messages are retrieved per turn.
+Type to chat; the Mirror replies in the user's voice. Retrieval is **off by
+default — pass `--rag` to enable it** (omit it to disable); `--semantic` switches
+to embedding-based retrieval (needs sentence-transformers); `--k 6` tunes how many
+of the user's real messages are retrieved per turn.
 
 ## Keys & privacy at serve time
 

@@ -39,11 +39,14 @@ The parser:
 
 ## Android SMS / MMS
 
-Use **SMS Backup & Restore** (Play Store) → back up to **XML**. The XML has
-`<sms address="..." date="..." type="2" body="..."/>` where `type=2` means
-*sent by you* (`type=1` is received). Map `type==2` → `is_from_me=true`,
-`date` (epoch ms) → timestamp, `address` → `conversation_id`. A short XML parser
-(stdlib `xml.etree.ElementTree`) does it; copy `whatsapp_parse.py`'s CLI shape.
+Use **SMS Backup & Restore** (Play Store) → back up to **XML**, then:
+```bash
+python scripts/connectors/sms_xml_parse.py exports/sms-backup.xml -o data/raw/sms.jsonl
+```
+The XML has `<sms address="..." date="..." type="2" body="..."/>` where `type=2`
+means *sent by you* (`type=1` is received). The parser flags `type==2` →
+`is_from_me`, converts `date` (epoch ms) → timestamp, uses `contact_name`/
+`address` → `conversation_id`, and streams (flat memory) on large backups.
 
 ## Signal
 

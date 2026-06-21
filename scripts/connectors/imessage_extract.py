@@ -57,15 +57,20 @@ def decode_attributed_body(blob: Optional[bytes]) -> Optional[str]:
         return None
     try:
         tail = blob.split(b"NSString", 1)[1][5:]  # skip class chaff after NSString
-        if tail[0] == 0x81:                        # 0x81 => 2-byte little-endian length
-            length = int.from_bytes(tail[1:3], "little")
-            start = 3
-        else:
-            length = tail[0]
-            start = 1
+        b0 = tail[0]
+        if b0 == 0x81:                             # u16 little-endian length
+            length, start = int.from_bytes(tail[1:3], "little"), 3
+        elif b0 == 0x82:                           # u32 little-endian length
+            length, start = int.from_bytes(tail[1:5], "little"), 5
+        else:                                      # single-byte length
+            length, start = b0, 1
         text = tail[start:start + length].decode("utf-8", errors="replace")
-        # Reject obviously-binary junk.
-        return text if text and sum(c < " " and c not in "\n\t" for c in text) < 3 else None
+        if not text:
+            return None
+        # Reject a binary mis-slice by RATIO of control chars (not a flat count),
+        # so legitimate multi-paragraph messages with several newlines survive.
+        ctrl = sum(1 for c in text if ord(c) < 32 and c not in "\n\t\r")
+        return text if ctrl / len(text) < 0.1 else None
     except Exception:
         return None
 

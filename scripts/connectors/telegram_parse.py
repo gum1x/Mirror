@@ -75,10 +75,15 @@ def parse(path: str, me: list[str], me_id: Optional[str], tz: Optional[str]
 
     me_lower = {m.lower() for m in me}
     seen_senders: set = set()
+    # Single-chat exports often lack a top-level name/id; fall back to the file
+    # name so two such exports don't both collapse into one "telegram" bucket.
+    default_convo = os.path.splitext(os.path.basename(path))[0]
+    if default_convo in ("result", "messages"):
+        default_convo = os.path.basename(os.path.dirname(os.path.abspath(path))) or "telegram"
 
     def gen() -> Iterator[MessageRecord]:
         for chat in _chats(data):
-            convo = chat.get("name") or str(chat.get("id", "telegram"))
+            convo = chat.get("name") or (str(chat["id"]) if chat.get("id") else default_convo)
             for msg in chat.get("messages", []):
                 if msg.get("type") != "message":
                     continue

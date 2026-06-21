@@ -16,6 +16,11 @@ total messages. After `build_dataset.py`, that's the line count of `train.jsonl`
 | ~1,000–5,000 | **SFT/QLoRA sweet spot** | Solid surface-voice lock-in. This is where fine-tunes start feeling "like you." |
 | 5,000–20,000+ | Strong fine-tune; consider DPO | Diminishing returns on raw volume — **curation now matters more than count.** |
 
+The published floor for fine-tuning at all is **≥100 examples, with ≥1,000
+preferable** ([Unsloth datasets guide](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/datasets-guide.md));
+OpenAI requires ≥10 but that's far too few for a convincing voice. Below ~300 of
+your own messages, prefer Path A.
+
 Quality beats quantity past a few thousand: a clean, representative,
 de-duplicated set of your *real* messages outperforms a larger noisy one.
 Balance across conversations (`--max-per-convo`) so one chatty thread doesn't

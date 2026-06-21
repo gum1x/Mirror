@@ -49,7 +49,8 @@ The parser uses Python's stdlib `mailbox` + `email`:
 - `conversation_id` = the recipient (`To:` first address) so threads with one
   person group together; `timestamp` from the `Date:` header; `reply_to` from
   `In-Reply-To`.
-- Drops empty bodies, auto-replies, and calendar invites.
+- Drops empty bodies and records with no `From`/`To` headers (mis-split
+  mbox envelopes). Un-escapes mboxrd `>From ` lines so your own prose is intact.
 
 ## Gotchas
 

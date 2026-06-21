@@ -33,9 +33,10 @@ def clean_text(text: str, drop_urls: bool) -> str:
     return text.strip()
 
 
-def normalize(inputs: list[str], min_chars: int, drop_urls: bool, dedup: bool
-              ) -> Iterator[MessageRecord]:
+def normalize(inputs: list[str], min_chars: int, drop_urls: bool, dedup: bool,
+              dedup_global: bool) -> Iterator[MessageRecord]:
     last_key = None
+    seen_global: set = set()
     for path in inputs:
         for rec in read_jsonl(path):
             rec.text = clean_text(rec.text or "", drop_urls)
@@ -46,6 +47,11 @@ def normalize(inputs: list[str], min_chars: int, drop_urls: bool, dedup: bool
                 if key == last_key:
                     continue
                 last_key = key
+            if dedup_global:
+                norm = " ".join(rec.text.lower().split())
+                if norm in seen_global:
+                    continue
+                seen_global.add(norm)
             yield rec
 
 
@@ -55,10 +61,13 @@ def main() -> None:
     ap.add_argument("--min-chars", type=int, default=1, help="Drop messages shorter than this.")
     ap.add_argument("--drop-urls", action="store_true", help="Replace URLs with <url>.")
     ap.add_argument("--dedup", action="store_true", help="Drop exact consecutive duplicates.")
+    ap.add_argument("--dedup-global", action="store_true",
+                    help="Drop ALL repeats of the same normalized text corpus-wide "
+                         "(removes forwarded/copy-paste spam; also flattens repeated one-liners).")
     ap.add_argument("-o", "--output", default="-", help="Output .jsonl (default stdout).")
     args = ap.parse_args()
-    n = write_jsonl(normalize(args.inputs, args.min_chars, args.drop_urls, args.dedup),
-                    args.output)
+    n = write_jsonl(normalize(args.inputs, args.min_chars, args.drop_urls, args.dedup,
+                              args.dedup_global), args.output)
     print(f"Wrote {n} cleaned messages → {args.output}", file=sys.stderr)
 
 

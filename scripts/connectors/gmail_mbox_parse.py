@@ -69,13 +69,21 @@ def _body(msg) -> str:
             plain = text
         elif ctype == "text/html" and html is None:
             html = text
-    return plain if plain is not None else (_html_to_text(html) if html else "")
+    body = plain if plain is not None else (_html_to_text(html) if html else "")
+    # mboxrd un-escaping: a body line that was ">From ", ">>From ", … had one
+    # ">" added at export so it wouldn't look like a message separator. Reverse it
+    # so the user's own prose ("From a product angle, …") is restored intact.
+    return re.sub(r"(?m)^>(>*From )", r"\1", body)
 
 
 def parse(path: str, me: list[str], match_from: bool) -> Iterator[MessageRecord]:
     me_lower = {m.lower() for m in me}
     box = mailbox.mbox(path)
     for msg in box:
+        # A real Sent message always has From/To headers; a record with neither
+        # is junk from a mis-split envelope — skip it rather than emit garbage.
+        if not msg.get("From") and not msg.get("To"):
+            continue
         body = _strip_quotes_and_sig(_body(msg))
         if not body:
             continue

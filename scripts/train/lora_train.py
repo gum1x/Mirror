@@ -8,6 +8,11 @@ installed (fast, low-VRAM), otherwise a plain transformers+peft+trl fallback.
         --epochs 3 --lora-r 16 --lora-alpha 32 --out adapters/mirror-sam
 
 Input is ShareGPT JSON from `build_dataset.py --format sharegpt`. Requires a GPU.
+
+Each example is trained as a (prompt, completion) pair where the completion is
+YOUR reply and the prompt is the preceding context. TRL computes loss only on
+the completion, so the model learns your voice — not the other person's — without
+any brittle, template-specific token-masking.
 """
 from __future__ import annotations
 
@@ -18,7 +23,8 @@ import sys
 ROLE_MAP = {"system": "system", "human": "user", "gpt": "assistant"}
 
 
-def load_sharegpt(path: str) -> list[dict]:
+def load_pairs(path: str) -> list[dict]:
+    """ShareGPT → conversational prompt/completion pairs (completion = your reply)."""
     with open(path, "r", encoding="utf-8") as fh:
         data = json.load(fh)
     convos = data if isinstance(data, list) else data.get("conversations", [])
@@ -26,54 +32,43 @@ def load_sharegpt(path: str) -> list[dict]:
     for ex in convos:
         msgs = [{"role": ROLE_MAP.get(c["from"], "user"), "content": c["value"]}
                 for c in ex.get("conversations", [])]
-        if msgs:
-            out.append({"messages": msgs})
+        if len(msgs) < 2 or msgs[-1]["role"] != "assistant":
+            continue
+        out.append({"prompt": msgs[:-1], "completion": [msgs[-1]]})
     return out
+
+
+def _sft_config(args, output_dir: str):
+    from trl import SFTConfig
+    # Current TRL: text/length live in SFTConfig (max_length, NOT max_seq_length);
+    # tokenizer is passed to SFTTrainer as processing_class.
+    return SFTConfig(
+        per_device_train_batch_size=2, gradient_accumulation_steps=4,
+        warmup_ratio=0.05, num_train_epochs=args.epochs, learning_rate=args.lr,
+        logging_steps=10, optim="adamw_8bit", lr_scheduler_type="cosine",
+        seed=args.seed, max_length=args.max_seq_len, output_dir=output_dir)
 
 
 def train_unsloth(rows, args) -> bool:
     try:
         from unsloth import FastLanguageModel
-        from unsloth.chat_templates import train_on_responses_only
     except ImportError:
         return False
-
     from datasets import Dataset
-    from trl import SFTTrainer, SFTConfig
+    from trl import SFTTrainer
 
     print(f"Loading {args.base} in 4-bit via Unsloth …", file=sys.stderr)
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=args.base, max_seq_length=args.max_seq_len,
-        load_in_4bit=True, dtype=None)
+        model_name=args.base, max_seq_length=args.max_seq_len, load_in_4bit=True, dtype=None)
     model = FastLanguageModel.get_peft_model(
         model, r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=0.0,
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                         "gate_proj", "up_proj", "down_proj"],
         use_gradient_checkpointing="unsloth", random_state=args.seed)
 
-    def fmt(ex):
-        return {"text": tokenizer.apply_chat_template(
-            ex["messages"], tokenize=False, add_generation_prompt=False)}
-
-    ds = Dataset.from_list(rows).map(fmt)
-
     trainer = SFTTrainer(
-        model=model, tokenizer=tokenizer, train_dataset=ds,
-        dataset_text_field="text", max_seq_length=args.max_seq_len,
-        args=SFTConfig(
-            per_device_train_batch_size=2, gradient_accumulation_steps=4,
-            warmup_ratio=0.05, num_train_epochs=args.epochs,
-            learning_rate=args.lr, logging_steps=10, optim="adamw_8bit",
-            lr_scheduler_type="cosine", seed=args.seed, output_dir=args.out + "_ckpt"))
-
-    # Mask everything but the assistant (your) turns so only your voice is learned.
-    try:
-        trainer = train_on_responses_only(
-            trainer,
-            instruction_part="<|im_start|>user\n", response_part="<|im_start|>assistant\n")
-    except Exception:
-        pass  # template-specific; falls back to training on the full text
-
+        model=model, processing_class=tokenizer,
+        train_dataset=Dataset.from_list(rows), args=_sft_config(args, args.out + "_ckpt"))
     trainer.train()
     model.save_pretrained(args.out)
     tokenizer.save_pretrained(args.out)
@@ -88,10 +83,10 @@ def train_fallback(rows, args) -> None:
         from datasets import Dataset
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
         from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-        from trl import SFTTrainer, SFTConfig
+        from trl import SFTTrainer
     except ImportError:
-        sys.exit("Install Path C deps. Easiest: \n"
-                 '  pip install "unsloth[cu121] @ git+https://github.com/unslothai/unsloth.git"\n'
+        sys.exit("Install Path C deps. Easiest:\n"
+                 '  pip install "unsloth[cu121] @ git+https://github.com/unslothai/unsloth.git@<sha>"\n'
                  "or torch transformers peft trl datasets bitsandbytes.")
 
     print(f"Loading {args.base} in 4-bit (transformers fallback) …", file=sys.stderr)
@@ -107,18 +102,10 @@ def train_fallback(rows, args) -> None:
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                         "gate_proj", "up_proj", "down_proj"]))
 
-    def fmt(ex):
-        return {"text": tokenizer.apply_chat_template(ex["messages"], tokenize=False)}
-
-    ds = Dataset.from_list(rows).map(fmt)
-    SFTTrainer(
-        model=model, tokenizer=tokenizer, train_dataset=ds,
-        dataset_text_field="text", max_seq_length=args.max_seq_len,
-        args=SFTConfig(per_device_train_batch_size=1, gradient_accumulation_steps=8,
-                       warmup_ratio=0.05, num_train_epochs=args.epochs,
-                       learning_rate=args.lr, logging_steps=10, optim="adamw_8bit",
-                       lr_scheduler_type="cosine", seed=args.seed,
-                       output_dir=args.out + "_ckpt")).train()
+    trainer = SFTTrainer(
+        model=model, processing_class=tokenizer,
+        train_dataset=Dataset.from_list(rows), args=_sft_config(args, args.out + "_ckpt"))
+    trainer.train()
     model.save_pretrained(args.out)
     tokenizer.save_pretrained(args.out)
     print(f"\n✅ Saved LoRA adapter → {args.out}", file=sys.stderr)
@@ -137,11 +124,12 @@ def main() -> None:
     ap.add_argument("--out", default="adapters/mirror")
     args = ap.parse_args()
 
-    rows = load_sharegpt(args.input)
+    rows = load_pairs(args.input)
     if not rows:
-        sys.exit("No training examples loaded — check the ShareGPT input.")
-    print(f"Loaded {len(rows)} examples. Base={args.base} epochs={args.epochs} "
-          f"r={args.lora_r}.", file=sys.stderr)
+        sys.exit("No training pairs loaded — check the ShareGPT input "
+                 "(each example must end with your assistant/gpt turn).")
+    print(f"Loaded {len(rows)} (prompt,completion) pairs. Base={args.base} "
+          f"epochs={args.epochs} r={args.lora_r}.", file=sys.stderr)
 
     if not train_unsloth(rows, args):
         print("Unsloth not found — using transformers+peft fallback.", file=sys.stderr)

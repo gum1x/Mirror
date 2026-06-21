@@ -1,35 +1,21 @@
 # Mirror dependencies.
 #
-# The connector + formatting scripts use only the Python standard library, so
-# the core pipeline runs with NO installs. The extras below are grouped by the
-# path you choose; install only what you need.
+# The CORE pipeline is STDLIB-ONLY — every connector + normalize/scrub/build/
+# persona script runs with NOTHING installed. This file installs the lightweight
+# deps for the cloud paths (A/B) and helpers; everything here actually installs
+# (no environment markers that pip silently skips).
+#
+# Prefer the grouped extras in pyproject.toml when you can:
+#   pip install ".[openai]"   ".[rag]"   ".[lora]"   ".[anthropic]"   ".[cloud]"
 
-# ── Core (stdlib only) ───────────────────────────────────────────────────────
-# whatsapp_parse.py, telegram_parse.py, imessage_extract.py, gmail_mbox_parse.py,
-# normalize.py, pii_scrub.py, build_dataset.py, schema.py
-#   → nothing required.
+anthropic>=0.40.0           # Path A (Claude persona + RAG) + eval LLM-judge
+openai>=1.40.0              # Path B (OpenAI fine-tune SFT/DPO)
+sentence-transformers>=3.0  # semantic RAG (mirror_chat.py --semantic) — optional
+numpy>=1.26                 # semantic RAG
+pyyaml>=6.0                 # optional: parse mirror.config.yaml
 
-# ── Path A: Claude persona + RAG (recommended default) ───────────────────────
-anthropic>=0.40.0          # Claude API client (serve/mirror_chat.py)
-# Lightweight local retrieval for RAG. Either works; sentence-transformers is
-# fully local, the rest is stdlib. Install if you want semantic retrieval:
-sentence-transformers>=3.0 ; extra == "rag"
-numpy>=1.26                ; extra == "rag"
-
-# ── Path B: OpenAI fine-tune (SFT → DPO) ─────────────────────────────────────
-openai>=1.40.0             ; extra == "openai"
-
-# ── Path C: Local LoRA on Llama / Qwen ───────────────────────────────────────
-# Recommended: install Unsloth, which pins compatible torch/transformers/peft.
-#   pip install "unsloth[cu121] @ git+https://github.com/unslothai/unsloth.git"
-# or the explicit stack:
-# torch>=2.3                ; extra == "lora"
-# transformers>=4.44        ; extra == "lora"
-# peft>=0.12                ; extra == "lora"
-# trl>=0.9                  ; extra == "lora"
-# datasets>=2.20            ; extra == "lora"
-# bitsandbytes>=0.43        ; extra == "lora"
-
-# ── Optional connector helpers ───────────────────────────────────────────────
-# telethon>=1.36           ; extra == "telegram-api"   # pull Telegram via API
-# beautifulsoup4>=4.12     ; extra == "html"           # parse HTML exports
+# Path C (local QLoRA) needs a heavy GPU stack — install it separately:
+#   pip install ".[lora]"
+# or, recommended, Unsloth (pins a compatible torch/transformers/peft/trl);
+# PIN the commit for supply-chain safety:
+#   pip install "unsloth[cu121] @ git+https://github.com/unslothai/unsloth.git@<commit-sha>"

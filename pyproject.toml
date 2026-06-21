@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mirror-clone"
+version = "0.1.0"
+description = "Train an AI to speak, answer, and think like you — from your own chat history."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+keywords = ["llm", "fine-tuning", "personal-ai", "digital-twin", "style-cloning"]
+
+# The core pipeline (parse → normalize → scrub → build → persona) is stdlib-only,
+# so the base install pulls nothing. Each path's deps live in an extra below —
+# install only what you need:  pip install ".[openai]"  /  ".[rag]"  /  ".[lora]"
+dependencies = []
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40.0"]                       # Path A (Claude) + eval judge
+rag = ["sentence-transformers>=3.0", "numpy>=1.26"]     # semantic retrieval
+openai = ["openai>=1.40.0"]                             # Path B (OpenAI fine-tune)
+lora = [                                                # Path C (local QLoRA)
+  "torch>=2.3", "transformers>=4.44", "peft>=0.12",
+  "trl>=0.16", "datasets>=2.20", "bitsandbytes>=0.43",
+]
+config = ["pyyaml>=6.0"]                                # read mirror.config.yaml
+dev = ["pytest>=7.0"]
+# Convenience meta-extra for the cloud paths (no heavy GPU stack):
+cloud = ["anthropic>=0.40.0", "openai>=1.40.0", "sentence-transformers>=3.0", "numpy>=1.26"]
+
+[project.urls]
+Homepage = "https://github.com/gum1x/Mirror"
+
+# Scripts are run directly (python scripts/...), not imported as an installed
+# package — so there are no packages to discover. The project is installable only
+# to pull the optional-dependency groups above.
+[tool.setuptools]
+packages = []
+py-modules = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

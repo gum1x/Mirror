@@ -43,6 +43,13 @@ python scripts/train/openai_finetune.py data/train.jsonl \
     --base gpt-4.1-mini --suffix mirror-sam
 
 # 3. (optional) DPO polish after SFT, if eval says "too generic":
+#    3a. build the skeleton (preferred = your real replies):
+python scripts/format/build_dataset.py data/scrubbed.jsonl --format dpo \
+    --system-file persona/style_card.md -o data/dpo_skeleton.jsonl
+#    3b. fill the rejected side by sampling the base model:
+python scripts/train/openai_finetune.py data/dpo_skeleton.jsonl \
+    --build-dpo --base gpt-4.1-mini -o data/dpo.jsonl
+#    3c. train DPO on top of the SFT model:
 python scripts/train/openai_finetune.py data/dpo.jsonl \
     --method dpo --base <sft-model-id> --suffix mirror-sam-dpo
 ```

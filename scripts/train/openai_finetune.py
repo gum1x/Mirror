@@ -43,6 +43,21 @@ def validate_sft(rows: list[dict]) -> bool:
     return ok
 
 
+def validate_dpo(rows: list[dict]) -> bool:
+    ok = True
+    for i, row in enumerate(rows):
+        if not row.get("input", {}).get("messages"):
+            print(f"  line {i}: missing input.messages", file=sys.stderr); ok = False
+        if not row.get("preferred_output"):
+            print(f"  line {i}: missing preferred_output", file=sys.stderr); ok = False
+        if not row.get("non_preferred_output"):
+            print(f"  line {i}: empty non_preferred_output — run --build-dpo first "
+                  "to fill the rejected side", file=sys.stderr); ok = False
+    print(f"DPO examples: {len(rows)} | validation: " + ("PASS" if ok else "FAIL"),
+          file=sys.stderr)
+    return ok
+
+
 def get_client():
     try:
         from openai import OpenAI
@@ -70,7 +85,8 @@ def build_dpo(rows: list[dict], base: str, out: str) -> None:
 def run_job(path: str, base: str, method: str, suffix: str, epochs) -> None:
     client = get_client()
     print(f"Uploading {path} …", file=sys.stderr)
-    up = client.files.create(file=open(path, "rb"), purpose="fine-tune")
+    with open(path, "rb") as fh:
+        up = client.files.create(file=fh, purpose="fine-tune")
 
     hp = {} if epochs is None else {"n_epochs": epochs}
     method_obj = ({"type": "supervised", "supervised": {"hyperparameters": hp}}
@@ -121,9 +137,9 @@ def main() -> None:
         build_dpo(rows, args.base, args.output)
         return
 
-    if args.method == "sft" and not validate_sft(rows):
-        if not args.validate_only:
-            sys.exit("Fix the dataset before training.")
+    valid = validate_sft(rows) if args.method == "sft" else validate_dpo(rows)
+    if not valid and not args.validate_only:
+        sys.exit("Fix the dataset before training.")
     if args.validate_only:
         return
 

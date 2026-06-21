@@ -89,28 +89,39 @@ class Mirror:
         self.retriever = retriever
         self._local = None  # lazy (path C)
 
-    def _system_for(self, query: str) -> str:
-        snips = self.retriever.top_k(query, self.args.k) if self.retriever else []
-        return build_system(self.style_card, snips)
+    def _snippets(self, turns: list[dict]) -> list[str]:
+        query = next((m["content"] for m in reversed(turns) if m["role"] == "user"), "")
+        return self.retriever.top_k(query, self.args.k) if self.retriever else []
 
     def reply(self, turns: list[dict]) -> str:
-        query = next((m["content"] for m in reversed(turns) if m["role"] == "user"), "")
-        system = self._system_for(query)
+        snips = self._snippets(turns)
         if self.args.path == "A":
-            return self._claude(system, turns)
+            return self._claude(snips, turns)
+        system = build_system(self.style_card, snips)
         if self.args.path == "B":
             return self._openai(system, turns)
         return self._local_gen(system, turns)
 
-    def _claude(self, system: str, turns: list[dict]) -> str:
+    def _claude(self, snippets: list[str], turns: list[dict]) -> str:
         import anthropic
         client = anthropic.Anthropic()
-        resp = client.messages.create(
-            model=self.args.model or "claude-opus-4-8",
-            max_tokens=self.args.max_tokens, system=system,
-            thinking={"type": "adaptive"},
-            messages=[{"role": m["role"], "content": m["content"]} for m in turns])
-        return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+        # Cache the stable style card (prefix); keep volatile RAG snippets after the
+        # breakpoint so the cache survives across turns. Stream to stay timeout-safe.
+        system_blocks = [{"type": "text", "text": self.style_card or DEFAULT_SYSTEM,
+                          "cache_control": {"type": "ephemeral"}}]
+        if snippets:
+            block = "\n".join(f"- {s}" for s in snippets)
+            system_blocks.append({"type": "text", "text":
+                "## Things YOU have actually said (use your real voice and views; if "
+                "these don't cover it, reason as yourself — don't invent facts)\n" + block})
+        with client.messages.stream(
+                model=self.args.model or "claude-opus-4-8",
+                max_tokens=self.args.max_tokens, system=system_blocks,
+                thinking={"type": "adaptive"},
+                messages=[{"role": m["role"], "content": m["content"]} for m in turns]) as stream:
+            final = stream.get_final_message()
+        return "".join(b.text for b in final.content
+                       if getattr(b, "type", "") == "text").strip()
 
     def _openai(self, system: str, turns: list[dict]) -> str:
         from openai import OpenAI
