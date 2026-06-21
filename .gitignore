@@ -1,0 +1,17 @@
+# Your private data and trained artifacts never get committed.
+data/
+persona/
+adapters/
+eval/
+exports/
+mirror.config.yaml
+*.mbox
+*.jsonl
+!examples/*.jsonl
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env

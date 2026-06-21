@@ -1,0 +1,70 @@
+# Mirror configuration — copy to mirror.config.yaml and edit.
+# The /mirror skill fills most of this in by interviewing you; you rarely
+# need to write it by hand. Every field is documented inline.
+
+# Who you are in the exports. Used to flag is_from_me across connectors.
+identity:
+  # Your display name(s) / handles as they appear in each platform's export.
+  # Connectors match against these (case-insensitive) to detect "you".
+  names: ["Sam", "Sam Rivera", "sam.rivera"]
+  phone_numbers: ["+15551234567"]      # for SMS / iMessage / WhatsApp
+  emails: ["sam@example.com"]          # for Gmail / Outlook
+
+# What you're building. Drives model-selection (see skills/mirror-model-selection).
+goal:
+  # One of: autoreply | knowledge_qa | thought_partner | full_clone | journaling
+  use_case: full_clone
+  # Where it must run: cloud_ok | hosted_finetune | fully_local
+  privacy: cloud_ok
+  budget: medium            # none | low | medium | high
+  owns_gpu: false           # true unlocks Path C without cloud rental
+  surfaces: ["chat"]        # chat | email | sms | api
+
+# Which platforms to ingest. Add only what you have.
+connectors:
+  whatsapp:
+    enabled: true
+    export_dir: "exports/whatsapp"   # folder of "WhatsApp Chat with *.txt"
+  telegram:
+    enabled: true
+    result_json: "exports/telegram/result.json"
+  imessage:
+    enabled: false
+    chat_db: "~/Library/Messages/chat.db"   # macOS; needs Full Disk Access
+  gmail:
+    enabled: false
+    mbox: "exports/gmail/Sent.mbox"          # Google Takeout → Mail (Sent only)
+  slack:
+    enabled: false
+    export_dir: "exports/slack"
+  discord:
+    enabled: false
+    export_dir: "exports/discord"            # via DiscordChatExporter JSON
+
+# Data handling.
+data:
+  min_chars: 1            # drop messages shorter than this (after trim)
+  drop_media_only: true   # drop "<Media omitted>" / attachment-only messages
+  redact_pii: true        # run pii_scrub before any upload
+  custom_redactions: []   # extra literal strings/regexes to scrub
+  context_turns: 6        # how many prior turns to include per training example
+
+# Training (model-selection writes the chosen path here).
+training:
+  path: A                 # A=Claude prompt+RAG, B=OpenAI finetune, C=local LoRA
+  # Path B:
+  openai_base_model: "gpt-4.1-mini"
+  openai_method: "sft"    # sft | sft+dpo
+  # Path C:
+  base_model: "Qwen/Qwen2.5-7B-Instruct"
+  lora_r: 16
+  lora_alpha: 32
+  epochs: 3
+  # Path A:
+  claude_model: "claude-opus-4-8"
+  retrieval: semantic     # none | keyword | semantic
+
+# Evaluation thresholds (see skills/mirror-evaluation).
+eval:
+  holdout_ratio: 0.1      # fraction of your conversations held out for testing
+  target_style_score: 0.7 # 0-1 blended voice-match score to aim for

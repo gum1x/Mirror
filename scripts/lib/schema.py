@@ -1,0 +1,147 @@
+"""Mirror unified message schema — the contract between every stage.
+
+Connectors emit a stream of `MessageRecord` (one JSON object per line, JSONL).
+Everything downstream (formatting, persona analysis, dataset building) consumes
+it. Keeping this contract small and stable is what lets the connectors and the
+trainers evolve independently.
+
+A record:
+
+    {
+      "source": "whatsapp",                 # connector id that produced it
+      "conversation_id": "Alex",            # chat / thread identifier
+      "timestamp": "2024-03-05T21:41:12Z",  # ISO-8601 UTC, or null if unknown
+      "sender": "me",                       # "me" | "other" | "<display name>"
+      "is_from_me": true,                   # the one field training relies on
+      "text": "running 5 min late lol",     # plain text, media stripped
+      "reply_to": null,                     # optional source-native msg id
+      "media": null                         # optional {"type": "image", ...}
+    }
+
+`is_from_me` is the load-bearing field: your messages become the *assistant*
+voice the model learns; everyone else becomes *context*.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
+from typing import Any, Iterable, Iterator, Optional
+
+SCHEMA_VERSION = "1.0"
+
+# Connector ids we know about. Connectors may add new ones; this is advisory.
+KNOWN_SOURCES = {
+    "whatsapp", "telegram", "imessage", "sms", "gmail", "outlook",
+    "slack", "discord", "instagram", "messenger", "signal", "imported",
+}
+
+
+@dataclass
+class MessageRecord:
+    """One message in one conversation."""
+
+    source: str
+    conversation_id: str
+    text: str
+    is_from_me: bool
+    sender: str = "me"
+    timestamp: Optional[str] = None  # ISO-8601 UTC
+    reply_to: Optional[str] = None
+    media: Optional[dict[str, Any]] = None
+    extra: dict[str, Any] = field(default_factory=dict)  # connector-specific
+
+    def __post_init__(self) -> None:
+        if self.sender == "me" and not self.is_from_me:
+            # keep the two in sync when only one was provided
+            self.sender = "other"
+        if self.is_from_me and self.sender == "other":
+            self.sender = "me"
+
+    def to_json(self) -> str:
+        d = asdict(self)
+        if not d["extra"]:
+            d.pop("extra")
+        return json.dumps(d, ensure_ascii=False)
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "MessageRecord":
+        known = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
+        extra = {k: v for k, v in d.items() if k not in known}
+        base = {k: v for k, v in d.items() if k in known}
+        rec = cls(**base)
+        if extra:
+            rec.extra.update(extra)
+        return rec
+
+
+def iso_utc(dt: datetime) -> str:
+    """Normalize any datetime to an ISO-8601 UTC string with a trailing Z."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def write_jsonl(records: Iterable[MessageRecord], path: str) -> int:
+    """Write records to a .jsonl file (or '-' for stdout). Returns the count."""
+    n = 0
+    out = sys.stdout if path == "-" else open(path, "w", encoding="utf-8")
+    try:
+        for rec in records:
+            out.write(rec.to_json() + "\n")
+            n += 1
+    finally:
+        if out is not sys.stdout:
+            out.close()
+    return n
+
+
+def read_jsonl(path: str) -> Iterator[MessageRecord]:
+    """Stream MessageRecords from a .jsonl file (or '-' for stdin)."""
+    fh = sys.stdin if path == "-" else open(path, "r", encoding="utf-8")
+    try:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            yield MessageRecord.from_dict(json.loads(line))
+    finally:
+        if fh is not sys.stdin:
+            fh.close()
+
+
+def validate(records: Iterable[MessageRecord]) -> dict[str, Any]:
+    """Cheap sanity report so users catch a broken connector early."""
+    total = mine = empty = no_ts = 0
+    convos: set[str] = set()
+    sources: set[str] = set()
+    for r in records:
+        total += 1
+        mine += int(r.is_from_me)
+        empty += int(not (r.text or "").strip())
+        no_ts += int(r.timestamp is None)
+        convos.add(r.conversation_id)
+        sources.add(r.source)
+    return {
+        "total_messages": total,
+        "from_me": mine,
+        "from_others": total - mine,
+        "mine_ratio": round(mine / total, 3) if total else 0.0,
+        "conversations": len(convos),
+        "sources": sorted(sources),
+        "empty_text": empty,
+        "missing_timestamp": no_ts,
+    }
+
+
+if __name__ == "__main__":
+    # `python schema.py path.jsonl` prints a validation report.
+    src = sys.argv[1] if len(sys.argv) > 1 else "-"
+    report = validate(read_jsonl(src))
+    print(json.dumps(report, indent=2))
+    if report["total_messages"] and report["from_me"] == 0:
+        print("\n⚠️  No messages flagged is_from_me=true — the model would have "
+              "no 'you' voice to learn. Check the connector's --me argument.",
+              file=sys.stderr)
