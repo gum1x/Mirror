@@ -138,10 +138,12 @@ def main() -> None:
         return
 
     valid = validate_sft(rows) if args.method == "sft" else validate_dpo(rows)
-    if not valid and not args.validate_only:
-        sys.exit("Fix the dataset before training.")
     if args.validate_only:
-        return
+        # Exit nonzero on a bad dataset so `--validate-only` is a usable pre-flight
+        # gate in scripts/CI (previously it always exited 0, even on FAIL).
+        sys.exit(0 if valid else 1)
+    if not valid:
+        sys.exit("Fix the dataset before training.")
 
     run_job(args.input, args.base, args.method, args.suffix, args.epochs)
 
