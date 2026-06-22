@@ -15,6 +15,10 @@ consider a dedicated NER/PII tool (e.g. Microsoft Presidio) on top of this.
 from __future__ import annotations
 
 import argparse
+import datetime
+import hashlib
+import json
+import os
 import re
 import sys
 from collections import Counter
@@ -70,12 +74,43 @@ def scrub(inputs: list[str], master: re.Pattern, tags: dict[str, str], counts: C
             yield rec
 
 
+def _sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def write_manifest(path: str, args, counts: Counter, n: int) -> None:
+    """Auditable record of what was scrubbed. Stores counts + file hashes only —
+    never the custom literals (those are the very PII being hidden)."""
+    manifest = {
+        "generated": datetime.datetime.now().isoformat(timespec="seconds"),
+        "engine": "regex",
+        "redaction_tags": sorted({tag for tag, _ in BUILTINS}),
+        "custom_terms_count": len(args.custom),  # count only, never the strings
+        "redactions": {k: v for k, v in sorted(counts.items())},
+        "messages": n,
+        "inputs": [{"path": p, "sha256": _sha256(p)} for p in args.inputs
+                   if os.path.isfile(p)],
+        "output": {"path": args.output, "sha256": _sha256(args.output)}
+        if args.output != "-" and os.path.isfile(args.output) else None,
+    }
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2)
+    print(f"Wrote redaction manifest → {path}", file=sys.stderr)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Redact PII from unified-JSONL messages.")
     ap.add_argument("inputs", nargs="+", help="One or more .jsonl files.")
     ap.add_argument("--custom", action="append", default=[],
                     help="Extra literal string to redact, case-insensitive (repeatable).")
     ap.add_argument("--report", action="store_true", help="Only print counts; don't write output.")
+    ap.add_argument("--manifest", nargs="?", const="REDACTION_MANIFEST.json", default=None,
+                    help="Write an auditable manifest (counts + file hashes, never the "
+                         "literals). Defaults next to -o when given with no path.")
     ap.add_argument("-o", "--output", default="-", help="Output .jsonl (default stdout).")
     args = ap.parse_args()
 
@@ -94,6 +129,12 @@ def main() -> None:
           "for those (see header).", file=sys.stderr)
     if not args.report:
         print(f"Wrote {n} messages → {args.output}", file=sys.stderr)
+        if args.manifest is not None:
+            mpath = args.manifest
+            if mpath == "REDACTION_MANIFEST.json" and args.output != "-":
+                mpath = os.path.join(os.path.dirname(args.output) or ".",
+                                     "REDACTION_MANIFEST.json")
+            write_manifest(mpath, args, counts, n)
 
 
 if __name__ == "__main__":
