@@ -99,14 +99,32 @@ def write_jsonl(records: Iterable[MessageRecord], path: str) -> int:
 
 
 def read_jsonl(path: str) -> Iterator[MessageRecord]:
-    """Stream MessageRecords from a .jsonl file (or '-' for stdin)."""
-    fh = sys.stdin if path == "-" else open(path, "r", encoding="utf-8")
+    """Stream MessageRecords from a .jsonl file (or '-' for stdin).
+
+    Fails with a clear, one-line message (not a raw traceback, and not a silent
+    exit 0) when the file is missing or a line isn't valid JSON, since the people
+    running this are usually feeding in their own messy exports.
+    """
+    if path == "-":
+        fh = sys.stdin
+    else:
+        try:
+            fh = open(path, "r", encoding="utf-8")
+        except FileNotFoundError:
+            sys.exit(f"Input file not found: {path}")
+        except OSError as e:
+            sys.exit(f"Could not open {path}: {e}")
     try:
-        for line in fh:
+        for i, line in enumerate(fh, 1):
             line = line.strip()
             if not line:
                 continue
-            yield MessageRecord.from_dict(json.loads(line))
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError as e:
+                sys.exit(f"{path} line {i}: not valid JSON ({e.msg}). "
+                         "Expected one JSON object per line (unified schema).")
+            yield MessageRecord.from_dict(obj)
     finally:
         if fh is not sys.stdin:
             fh.close()
