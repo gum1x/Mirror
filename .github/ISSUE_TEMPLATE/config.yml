@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting guide
+    url: https://github.com/gum1x/Mirror/blob/main/docs/TROUBLESHOOTING.md
+    about: Most "it didn't work" cases (empty eval, from_me=0, iMessage access) are answered here first.
+  - name: Adding a connector yourself
+    url: https://github.com/gum1x/Mirror/blob/main/CONTRIBUTING.md
+    about: The pattern for a new export source is small — this walks through it.

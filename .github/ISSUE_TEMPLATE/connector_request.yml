@@ -1,0 +1,32 @@
+name: New connector request
+description: Ask for (or propose) support for another app's export
+labels: ["connector"]
+body:
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: Signal / Messenger / LINE / ...
+    validations:
+      required: true
+  - type: dropdown
+    id: mechanism
+    attributes:
+      label: How do you export from it?
+      options:
+        - In-app "export chat"
+        - Account data download (Takeout-style)
+        - Local database file
+        - Third-party tool
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: One anonymized export line/record
+      description: A single message with real content replaced by placeholders, so we can see the shape.
+      render: text
+  - type: markdown
+    attributes:
+      value: "See CONTRIBUTING.md if you'd like to add the connector yourself — the pattern is small."

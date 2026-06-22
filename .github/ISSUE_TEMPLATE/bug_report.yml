@@ -1,0 +1,56 @@
+name: Bug report
+description: Something in the pipeline broke or produced wrong output
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please **scrub real names, numbers, and message
+        text** before pasting anything — don't share other people's data.
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Which stage?
+      options:
+        - interview
+        - connect / ingest
+        - format (normalize / scrub / build)
+        - persona
+        - model-selection
+        - train
+        - evaluate
+        - deploy / serve
+    validations:
+      required: true
+  - type: dropdown
+    id: connector
+    attributes:
+      label: Connector (if ingest)
+      options: ["n/a", "whatsapp", "telegram", "imessage", "sms", "gmail", "slack", "discord", "instagram", "other"]
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: macOS 15 / Ubuntu 24.04 / Windows 11
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.11"
+    validations:
+      required: true
+  - type: textarea
+    id: schema-report
+    attributes:
+      label: schema.py report
+      description: Output of `python scripts/lib/schema.py <your file>` (redact as needed).
+      render: json
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+      description: Exact command run and the error / wrong output (redacted).
+    validations:
+      required: true
