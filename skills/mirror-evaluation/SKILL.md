@@ -21,10 +21,18 @@ Run the served Mirror in batch over the eval prompts (it strips each real reply,
 generates its own, and records both):
 
 ```bash
-python scripts/serve/mirror_chat.py --path A --batch data/eval.jsonl --out eval/preds.jsonl
-#   --path B --model ft:...        for an OpenAI fine-tune
-#   --path C --adapter adapters/mirror-sam --base Qwen/Qwen2.5-7B-Instruct
+python scripts/serve/mirror_chat.py --path A --batch data/eval.jsonl --out eval/preds.jsonl \
+    --style-card persona/style_card.md --corpus data/scrubbed.jsonl --rag
+#   --path B --model ft:...   then add the same --style-card/--corpus/--rag flags
+#   --path C --adapter adapters/mirror-sam --base Qwen/Qwen2.5-7B-Instruct  (+ the same flags)
 ```
+
+> **Evaluate the *real* Mirror, not a generic prompt.** You must pass
+> `--style-card`, and `--corpus … --rag` if you're serving with retrieval —
+> otherwise `mirror_chat.py` falls back to its built-in generic system prompt
+> with no persona and no retrieval, and you'd be scoring a default assistant
+> instead of the Mirror. Use the same serving flags here that you'll use in
+> `mirror-deploy`.
 
 `preds.jsonl` lines: `{"prompt": [...], "reference": "<your real reply>", "prediction": "<mirror's reply>"}`.
 
