@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Serve the Mirror over HTTP so it can back a UI, a Shortcut, or an app.
+
+Reuses the exact serving logic from mirror_chat.py (style card + RAG + path A/B/C)
+but loads the model/retriever ONCE at startup (mirror_chat.py rebuilds the RAG
+index on every invocation). Exposes a simple endpoint plus an OpenAI-compatible
+one so existing chat clients work unchanged.
+
+    pip install fastapi uvicorn        # not part of the stdlib core
+    python scripts/serve/mirror_server.py --path A \
+        --style-card persona/style_card.md --corpus data/scrubbed.jsonl --rag
+
+    curl localhost:8000/chat -d '{"messages":[{"role":"user","content":"yo"}]}'
+    # or point any OpenAI client at http://localhost:8000/v1
+
+Endpoints:
+    POST /chat                    {"messages":[...]} -> {"reply": "..."}
+    POST /v1/chat/completions     OpenAI-compatible shim
+    GET  /healthz
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import time
+from types import SimpleNamespace
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import mirror_chat  # noqa: E402  (same dir; reuse its Mirror/Retriever/loaders)
+
+
+def build_mirror(args) -> "mirror_chat.Mirror":
+    style_card = ""
+    if os.path.exists(args.style_card):
+        style_card = open(args.style_card, encoding="utf-8").read().strip()
+    retriever = None
+    if args.rag:
+        if not args.corpus:
+            sys.exit("--rag needs --corpus path/to/messages.jsonl")
+        texts = mirror_chat.load_corpus(args.corpus)
+        print(f"RAG index: {len(texts)} of your messages.", file=sys.stderr)
+        retriever = mirror_chat.Retriever(texts, args.semantic)
+    return mirror_chat.Mirror(args, style_card, retriever)
+
+
+def make_app(mirror):
+    try:
+        from fastapi import FastAPI, HTTPException
+    except ImportError:
+        sys.exit("Install the server deps:  pip install fastapi uvicorn")
+
+    app = FastAPI(title="Mirror")
+
+    @app.get("/healthz")
+    def healthz():
+        return {"ok": True, "path": mirror.args.path}
+
+    @app.post("/chat")
+    def chat(payload: dict):
+        msgs = payload.get("messages")
+        if not msgs:
+            raise HTTPException(400, "body must include a non-empty 'messages' list")
+        turns = [{"role": m["role"], "content": m["content"]}
+                 for m in msgs if m.get("role") != "system"]
+        return {"reply": mirror.reply(turns)}
+
+    @app.post("/v1/chat/completions")
+    def openai_compat(payload: dict):
+        msgs = payload.get("messages", [])
+        turns = [{"role": m["role"], "content": m["content"]}
+                 for m in msgs if m.get("role") != "system"]
+        reply = mirror.reply(turns)
+        return {
+            "id": f"mirror-{int(time.time()*1000)}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": f"mirror-path-{mirror.args.path}",
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": reply}}],
+        }
+
+    return app
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Serve the Mirror over HTTP.")
+    ap.add_argument("--path", choices=["A", "B", "C"], required=True)
+    ap.add_argument("--model", help="Path A Claude model / Path B ft: id.")
+    ap.add_argument("--base", help="Path C base model.")
+    ap.add_argument("--adapter", help="Path C LoRA adapter dir.")
+    ap.add_argument("--style-card", default="persona/style_card.md")
+    ap.add_argument("--corpus", help="Unified JSONL for RAG.")
+    ap.add_argument("--rag", action="store_true")
+    ap.add_argument("--semantic", action="store_true")
+    ap.add_argument("--k", type=int, default=6)
+    ap.add_argument("--max-tokens", type=int, default=512)
+    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--port", type=int, default=8000)
+    args = ap.parse_args()
+
+    if args.path == "B" and not args.model:
+        ap.error("--path B needs --model ft:...")
+    if args.path == "C" and not args.base:
+        ap.error("--path C needs --base (and usually --adapter)")
+
+    mirror = build_mirror(args)
+    app = make_app(mirror)
+
+    try:
+        import uvicorn
+    except ImportError:
+        sys.exit("Install the server deps:  pip install fastapi uvicorn")
+    leaves = {"A": "style card + retrieved snippets go to Anthropic per request",
+              "B": "requests go to your OpenAI fine-tune", "C": "nothing leaves this machine"}
+    print(f"Serving Mirror (path {args.path}) on http://{args.host}:{args.port} — {leaves[args.path]}",
+          file=sys.stderr)
+    uvicorn.run(app, host=args.host, port=args.port)
+
+
+if __name__ == "__main__":
+    main()
