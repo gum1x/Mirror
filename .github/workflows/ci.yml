@@ -22,3 +22,25 @@ jobs:
         run: python -m compileall -q scripts tests
       - name: Run the pipeline regression suite
         run: python tests/test_pipeline.py
+      - name: End-to-end smoke on the bundled sample
+        run: |
+          python scripts/format/normalize.py examples/sample_messages.jsonl --dedup -o /tmp/clean.jsonl
+          python scripts/format/pii_scrub.py /tmp/clean.jsonl -o /tmp/scrubbed.jsonl
+          python scripts/persona/style_analyze.py /tmp/scrubbed.jsonl --name Sam -o /tmp/persona
+          python scripts/format/build_dataset.py /tmp/scrubbed.jsonl --format openai-chat \
+            --system-file /tmp/persona/style_card.md --holdout 0.1 -o /tmp/train.jsonl
+          test -s /tmp/train.jsonl
+          test -f /tmp/persona/style_card.md
+
+  lint:
+    # Informational for now (does not block). Tighten to a hard gate once the
+    # codebase has been auto-formatted with `ruff format`.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Ruff lint
+        run: pipx run ruff check scripts tests
