@@ -25,7 +25,7 @@ ROLE_MAP = {"system": "system", "human": "user", "gpt": "assistant"}
 
 def load_pairs(path: str) -> list[dict]:
     """ShareGPT → conversational prompt/completion pairs (completion = your reply)."""
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
     convos = data if isinstance(data, list) else data.get("conversations", [])
     out = []
@@ -81,8 +81,8 @@ def train_fallback(rows, args) -> None:
     try:
         import torch
         from datasets import Dataset
-        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
         from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
         from trl import SFTTrainer
     except ImportError:
         sys.exit("Install Path C deps. Easiest:\n"

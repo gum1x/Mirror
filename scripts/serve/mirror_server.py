@@ -24,13 +24,12 @@ import argparse
 import os
 import sys
 import time
-from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mirror_chat  # noqa: E402  (same dir; reuse its Mirror/Retriever/loaders)
 
 
-def build_mirror(args) -> "mirror_chat.Mirror":
+def build_mirror(args) -> mirror_chat.Mirror:
     style_card = ""
     if os.path.exists(args.style_card):
         style_card = open(args.style_card, encoding="utf-8").read().strip()
@@ -52,25 +51,31 @@ def make_app(mirror):
 
     app = FastAPI(title="Mirror")
 
+    def extract_turns(payload: dict) -> list[dict]:
+        """Validate the request body into non-system turns, or raise a 400."""
+        msgs = payload.get("messages")
+        if not msgs or not isinstance(msgs, list):
+            raise HTTPException(400, "body must include a non-empty 'messages' list")
+        try:
+            turns = [{"role": m["role"], "content": m["content"]}
+                     for m in msgs if m.get("role") != "system"]
+        except (TypeError, KeyError):
+            raise HTTPException(400, "each message needs 'role' and 'content'") from None
+        if not turns:
+            raise HTTPException(400, "'messages' must contain at least one non-system message")
+        return turns
+
     @app.get("/healthz")
     def healthz():
         return {"ok": True, "path": mirror.args.path}
 
     @app.post("/chat")
     def chat(payload: dict):
-        msgs = payload.get("messages")
-        if not msgs:
-            raise HTTPException(400, "body must include a non-empty 'messages' list")
-        turns = [{"role": m["role"], "content": m["content"]}
-                 for m in msgs if m.get("role") != "system"]
-        return {"reply": mirror.reply(turns)}
+        return {"reply": mirror.reply(extract_turns(payload))}
 
     @app.post("/v1/chat/completions")
     def openai_compat(payload: dict):
-        msgs = payload.get("messages", [])
-        turns = [{"role": m["role"], "content": m["content"]}
-                 for m in msgs if m.get("role") != "system"]
-        reply = mirror.reply(turns)
+        reply = mirror.reply(extract_turns(payload))
         return {
             "id": f"mirror-{int(time.time()*1000)}",
             "object": "chat.completion",
@@ -113,8 +118,8 @@ def main() -> None:
         sys.exit("Install the server deps:  pip install fastapi uvicorn")
     leaves = {"A": "style card + retrieved snippets go to Anthropic per request",
               "B": "requests go to your OpenAI fine-tune", "C": "nothing leaves this machine"}
-    print(f"Serving Mirror (path {args.path}) on http://{args.host}:{args.port} — {leaves[args.path]}",
-          file=sys.stderr)
+    print(f"Serving Mirror (path {args.path}) on http://{args.host}:{args.port} — "
+          f"{leaves[args.path]}", file=sys.stderr)
     uvicorn.run(app, host=args.host, port=args.port)
 
 

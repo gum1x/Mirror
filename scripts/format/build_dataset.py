@@ -23,7 +23,7 @@ import random
 import sys
 import zlib
 from collections import Counter, defaultdict
-from typing import Iterator, Optional
+from collections.abc import Iterator
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.schema import MessageRecord, read_jsonl  # noqa: E402
@@ -33,14 +33,14 @@ DEFAULT_SYSTEM = ("You are the user. Reply exactly as they would — matching th
                   "Do not be more formal, more verbose, or more polished than they are.")
 
 
-def load_system(path: Optional[str]) -> str:
+def load_system(path: str | None) -> str:
     if path and os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             return fh.read().strip()
     return DEFAULT_SYSTEM
 
 
-def _parse_ts(ts: Optional[str]) -> Optional[dt.datetime]:
+def _parse_ts(ts: str | None) -> dt.datetime | None:
     if not ts:
         return None
     try:
@@ -171,7 +171,7 @@ def write_dataset_card(path: str, args, stats: dict, n_train: int, n_eval: int,
     src = ", ".join(f"{k}:{v}" for k, v in sorted(stats["sources"].items()))
     card = f"""# Dataset card — Mirror training data
 
-- Generated: {dt.datetime.now().isoformat(timespec='seconds')}
+- Generated: {dt.datetime.now().astimezone().isoformat(timespec='seconds')}
 - Format: `{args.format}`
 - Output: `{args.output}`{f' (+ eval: `{eval_path_for(args.output)}`)' if args.holdout > 0 else ''}
 
@@ -189,7 +189,7 @@ def write_dataset_card(path: str, args, stats: dict, n_train: int, n_eval: int,
 - mode: {args.mode}
 - holdout: {args.holdout} (conversation-level split, seed {args.seed})
 - decontaminate eval↔train: {'on' if not args.no_decontaminate else 'off'}
-- system prompt: {'style card (' + args.system_file + ')' if args.system_file else 'built-in default'}
+- system prompt: {f'style card ({args.system_file})' if args.system_file else 'built-in default'}
 
 ## Result
 - Training examples: {n_train}
@@ -208,15 +208,18 @@ def main() -> None:
     ap.add_argument("inputs", nargs="+")
     ap.add_argument("--format", choices=["openai-chat", "sharegpt", "chatml", "dpo"],
                     default="openai-chat")
-    ap.add_argument("--system-file", help="File whose contents become the system prompt (style card).")
+    ap.add_argument("--system-file",
+                    help="File whose contents become the system prompt (style card).")
     ap.add_argument("--context-turns", type=int, default=6)
     ap.add_argument("--session-gap-minutes", type=int, default=360,
                     help="Start a new session when consecutive messages are >N min apart "
                          "(so context never crosses a long silence). 0 disables.")
-    ap.add_argument("--max-per-convo", type=int, default=0, help="Cap examples per conversation (0 = no cap).")
+    ap.add_argument("--max-per-convo", type=int, default=0,
+                    help="Cap examples per conversation (0 = no cap).")
     ap.add_argument("--min-target-chars", type=int, default=1)
     ap.add_argument("--mode", choices=["reply", "autocomplete"], default="reply")
-    ap.add_argument("--holdout", type=float, default=0.0, help="Fraction of conversations → eval split.")
+    ap.add_argument("--holdout", type=float, default=0.0,
+                    help="Fraction of conversations → eval split.")
     ap.add_argument("--no-decontaminate", action="store_true",
                     help="Skip removing eval examples whose reply also appears in train.")
     ap.add_argument("--seed", type=int, default=0)

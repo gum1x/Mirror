@@ -16,6 +16,7 @@ help:
 
 test:
 	$(PY) tests/test_pipeline.py
+	$(PY) tests/test_connectors.py
 
 lint:
 	ruff check scripts tests || echo "install ruff:  pipx install ruff"

@@ -13,11 +13,11 @@ import glob
 import json
 import os
 import sys
+from collections.abc import Iterator
 from datetime import datetime, timezone
-from typing import Iterator
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib.schema import MessageRecord, write_jsonl, iso_utc  # noqa: E402
+from lib.schema import MessageRecord, iso_utc, write_jsonl  # noqa: E402
 
 # Keys that mark a non-text (media/system) message we should skip.
 MEDIA_KEYS = ("photos", "videos", "audio_files", "gifs", "sticker", "share", "files")
@@ -32,7 +32,7 @@ def _fix_mojibake(s: str) -> str:
 
 
 def parse_thread(path: str, me: str, source: str) -> Iterator[MessageRecord]:
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
 
     title = _fix_mojibake(data.get("title", "")) or os.path.basename(os.path.dirname(path))

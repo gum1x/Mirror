@@ -22,6 +22,8 @@ jobs:
         run: python -m compileall -q scripts tests
       - name: Run the pipeline regression suite
         run: python tests/test_pipeline.py
+      - name: Run the connector regression suite
+        run: python tests/test_connectors.py
       - name: End-to-end smoke on the bundled sample
         run: |
           python scripts/format/normalize.py examples/sample_messages.jsonl --dedup -o /tmp/clean.jsonl
@@ -33,14 +35,13 @@ jobs:
           test -f /tmp/persona/style_card.md
 
   lint:
-    # Informational for now (does not block). Tighten to a hard gate once the
-    # codebase has been auto-formatted with `ruff format`.
+    # Hard gate: the codebase is ruff-check clean. Pinned so a new ruff release
+    # can't break CI; bump deliberately alongside a `ruff check` run.
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Ruff lint
-        run: pipx run ruff check scripts tests
+        run: pipx run ruff==0.15.8 check scripts tests

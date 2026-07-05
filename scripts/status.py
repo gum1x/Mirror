@@ -49,14 +49,17 @@ def assess(base: str) -> dict:
 
     stages = [
         ("1. Ingest", bool(raw), f"{len(raw)} raw file(s)" if raw else "no data/raw/*.jsonl yet",
-         'parse an export, e.g. python scripts/connectors/whatsapp_parse.py "chat.txt" --me NAME -o data/raw/whatsapp.jsonl'),
+         'parse an export, e.g. python scripts/connectors/whatsapp_parse.py "chat.txt" '
+         "--me NAME -o data/raw/whatsapp.jsonl"),
         ("2. Format (scrub)", bool(scrubbed), "data/scrubbed.jsonl present" if scrubbed
          else ("clean.jsonl only — scrub next" if clean else "not started"),
          "python scripts/format/normalize.py data/raw/*.jsonl --dedup -o data/clean.jsonl && "
          "python scripts/format/pii_scrub.py data/clean.jsonl -o data/scrubbed.jsonl"),
         ("3. Persona", style, "persona/style_card.md present" if style else "no style card",
          "python scripts/persona/style_analyze.py data/scrubbed.jsonl --name NAME -o persona/"),
-        ("4. Dataset", bool(train), f"{os.path.basename(train[0])} present" if train else "no training set",
+        ("4. Dataset", bool(train),
+         (f"{os.path.basename(train[0])} present" + (" (+ eval split)" if evals else ""))
+         if train else "no training set",
          "python scripts/format/build_dataset.py data/scrubbed.jsonl --format openai-chat "
          "--system-file persona/style_card.md --holdout 0.1 -o data/train.jsonl"),
         ("5. Train", bool(adapters), f"{len(adapters)} adapter dir(s)" if adapters
@@ -64,7 +67,8 @@ def assess(base: str) -> dict:
          "train your chosen path (see skills/mirror-training), or skip for Path A"),
         ("6. Evaluate", bool(preds), "eval/preds.jsonl present" if preds else "not evaluated",
          "python scripts/serve/mirror_chat.py --path A --batch data/eval.jsonl "
-         "--style-card persona/style_card.md --corpus data/scrubbed.jsonl --rag --out eval/preds.jsonl"),
+         "--style-card persona/style_card.md --corpus data/scrubbed.jsonl --rag "
+         "--out eval/preds.jsonl"),
     ]
 
     next_cmd = next((cmd for _, done, _, cmd in stages if not done), None)

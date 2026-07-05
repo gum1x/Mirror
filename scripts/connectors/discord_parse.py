@@ -14,16 +14,16 @@ import glob
 import json
 import os
 import sys
-from typing import Iterator, Optional
+from collections.abc import Iterator
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib.schema import MessageRecord, write_jsonl, iso_utc  # noqa: E402
-from datetime import datetime
+from lib.schema import MessageRecord, iso_utc, write_jsonl  # noqa: E402
 
 KEEP_TYPES = {"Default", "Reply", "", None}
 
 
-def parse_file(path: str, me: Optional[str], me_id: Optional[str]) -> Iterator[MessageRecord]:
+def parse_file(path: str, me: str | None, me_id: str | None) -> Iterator[MessageRecord]:
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
     chan = data.get("channel", {})

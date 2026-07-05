@@ -16,7 +16,6 @@ import re
 import statistics
 import sys
 from collections import Counter
-from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.schema import read_jsonl  # noqa: E402
@@ -26,7 +25,7 @@ EMOJI = re.compile(
     "\U00002B00-\U00002BFF\U0001F1E6-\U0001F1FF\U00002190-\U000021FF\U0000FE0F]"
 )
 WORD = re.compile(r"[a-zA-Z']+")
-SLANG = ["lol", "lmao", "lmao", "rofl", "idk", "idc", "tbh", "ngl", "imo", "imho",
+SLANG = ["lol", "lmao", "rofl", "idk", "idc", "tbh", "ngl", "imo", "imho",
          "fr", "ong", "istg", "smh", "iirc", "btw", "rn", "ttyl", "omw", "wyd",
          "hbu", "ily", "nvm", "wtf", "af", "lowkey", "highkey", "deadass", "bet"]
 STOPWORDS = set("the a an and or but to of in on at for is am are was were be been i "
@@ -59,7 +58,7 @@ def analyze(messages: list[str], name: str) -> dict:
     openers.pop("", None)
     # Whole-word matches only — avoid "af" inside "after", "ong" inside "wrong".
     slang_counts = {}
-    for s in dict.fromkeys(SLANG):  # dedup, preserve order
+    for s in SLANG:
         c = len(re.findall(r"\b" + re.escape(s) + r"\b", low))
         if c:
             slang_counts[s] = c

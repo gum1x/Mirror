@@ -26,9 +26,10 @@ from __future__ import annotations
 
 import json
 import sys
-from dataclasses import dataclass, field, asdict
+from collections.abc import Iterable, Iterator
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Iterable, Iterator, Optional
+from typing import Any
 
 SCHEMA_VERSION = "1.0"
 
@@ -48,9 +49,9 @@ class MessageRecord:
     text: str
     is_from_me: bool
     sender: str = "me"
-    timestamp: Optional[str] = None  # ISO-8601 UTC
-    reply_to: Optional[str] = None
-    media: Optional[dict[str, Any]] = None
+    timestamp: str | None = None  # ISO-8601 UTC
+    reply_to: str | None = None
+    media: dict[str, Any] | None = None
     extra: dict[str, Any] = field(default_factory=dict)  # connector-specific
 
     def __post_init__(self) -> None:
@@ -67,7 +68,7 @@ class MessageRecord:
         return json.dumps(d, ensure_ascii=False)
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "MessageRecord":
+    def from_dict(cls, d: dict[str, Any]) -> MessageRecord:
         known = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
         extra = {k: v for k, v in d.items() if k not in known}
         base = {k: v for k, v in d.items() if k in known}
@@ -109,7 +110,7 @@ def read_jsonl(path: str) -> Iterator[MessageRecord]:
         fh = sys.stdin
     else:
         try:
-            fh = open(path, "r", encoding="utf-8")
+            fh = open(path, encoding="utf-8")
         except FileNotFoundError:
             sys.exit(f"Input file not found: {path}")
         except OSError as e:

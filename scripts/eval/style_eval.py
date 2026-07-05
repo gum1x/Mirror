@@ -105,7 +105,7 @@ def main() -> None:
     args = ap.parse_args()
 
     with open(args.predictions, encoding="utf-8") as fh:
-        rows = [json.loads(l) for l in fh if l.strip()]
+        rows = [json.loads(line) for line in fh if line.strip()]
     with open(args.style, encoding="utf-8") as fh:
         style = json.load(fh)
     if not rows:

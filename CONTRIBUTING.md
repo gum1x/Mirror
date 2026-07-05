@@ -11,9 +11,11 @@ The core pipeline is stdlib-only, so there's nothing to install to work on it.
 python tests/test_pipeline.py        # regression suite (no deps)
 python tests/test_connectors.py      # connector coverage
 # or, with pytest:  pip install ".[dev]" && pytest
+make lint                            # ruff check — CI gates on this
 ```
 
-CI compiles `scripts` + `tests` and runs the suite on Python 3.9–3.12. Keep the
+CI compiles `scripts` + `tests`, runs both suites on Python 3.9–3.12, and fails
+on any `ruff check` finding. Keep the
 core stdlib-only and avoid syntax newer than 3.9; put any heavy dependency behind
 an optional extra in `pyproject.toml`.
 

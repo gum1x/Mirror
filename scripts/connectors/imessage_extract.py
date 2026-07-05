@@ -15,11 +15,11 @@ import json
 import os
 import sqlite3
 import sys
+from collections.abc import Iterator
 from datetime import datetime, timezone
-from typing import Iterator, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib.schema import MessageRecord, write_jsonl, iso_utc  # noqa: E402
+from lib.schema import MessageRecord, iso_utc, write_jsonl  # noqa: E402
 
 APPLE_EPOCH = 978307200  # seconds between 1970-01-01 and 2001-01-01 (UTC)
 
@@ -35,7 +35,7 @@ ORDER BY m.date ASC
 """
 
 
-def apple_to_iso(value: Optional[int]) -> Optional[str]:
+def apple_to_iso(value: int | None) -> str | None:
     if not value:
         return None
     # Modern macOS stores nanoseconds; older stored seconds.
@@ -46,7 +46,7 @@ def apple_to_iso(value: Optional[int]) -> Optional[str]:
         return None
 
 
-def decode_attributed_body(blob: Optional[bytes]) -> Optional[str]:
+def decode_attributed_body(blob: bytes | None) -> str | None:
     """Tolerant extractor for NSAttributedString typedstream blobs.
 
     Modern Messages stores rich text in `attributedBody` with `text` NULL. This
@@ -75,7 +75,7 @@ def decode_attributed_body(blob: Optional[bytes]) -> Optional[str]:
         return None
 
 
-def extract(db_path: str, service: Optional[str], me_handle: Optional[str]
+def extract(db_path: str, service: str | None, me_handle: str | None
             ) -> Iterator[MessageRecord]:
     uri = f"file:{os.path.expanduser(db_path)}?mode=ro"
     con = sqlite3.connect(uri, uri=True)
@@ -107,7 +107,7 @@ def extract_from_json(path: str) -> Iterator[MessageRecord]:
     Expects objects with: text, is_from_me (bool/int), timestamp (ISO) or
     date, conversation_id (or chat), sender (optional).
     """
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
     items = data if isinstance(data, list) else data.get("messages", [])
     for it in items:
@@ -120,7 +120,7 @@ def extract_from_json(path: str) -> Iterator[MessageRecord]:
             conversation_id=str(it.get("conversation_id") or it.get("chat") or "imessage"),
             text=text, is_from_me=is_me,
             sender="me" if is_me else str(it.get("sender") or "other"),
-            timestamp=it.get("timestamp"),
+            timestamp=it.get("timestamp") or it.get("date"),
         )
 
 

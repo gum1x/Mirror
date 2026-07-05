@@ -14,11 +14,11 @@ import glob
 import os
 import re
 import sys
+from collections.abc import Iterator
 from datetime import datetime
-from typing import Iterator, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib.schema import MessageRecord, write_jsonl, iso_utc  # noqa: E402
+from lib.schema import MessageRecord, iso_utc, write_jsonl  # noqa: E402
 
 # Line starting a new message: optional LTR mark, optional [, date, time,
 # optional ], optional dash, then "Sender: message" (or a system line).
@@ -38,7 +38,7 @@ LINE_RE = re.compile(
 # absence of a sender, so we don't need to enumerate every notice here.
 _PLACEHOLDER_RE = re.compile(
     r"(?:<\s*Media omitted\s*>"
-    r"|(?:image|video|audio|GIF|sticker|document|Contact card|GIF) omitted"
+    r"|(?:image|video|audio|GIF|sticker|document|Contact card) omitted"
     r"|This message was deleted|You deleted this message|null)",
     re.IGNORECASE,
 )
@@ -48,7 +48,7 @@ def _norm_spaces(s: str) -> str:
     return s.replace(" ", " ").replace(" ", " ").replace("‎", "")
 
 
-def _parse_dt(date_s: str, time_s: str, dayfirst: bool) -> Optional[str]:
+def _parse_dt(date_s: str, time_s: str, dayfirst: bool) -> str | None:
     date_s, time_s = _norm_spaces(date_s).strip(), _norm_spaces(time_s).strip().upper()
     parts = re.split(r"[./-]", date_s)
     if len(parts) != 3:
@@ -102,9 +102,9 @@ def _convo_from_filename(path: str) -> str:
 def parse_file(path: str, me: list[str], dayfirst: bool) -> Iterator[MessageRecord]:
     convo = _convo_from_filename(path)
     me_lower = {m.lower() for m in me}
-    cur: Optional[dict] = None
+    cur: dict | None = None
 
-    def flush() -> Optional[MessageRecord]:
+    def flush() -> MessageRecord | None:
         if not cur:
             return None
         text = cur["text"].strip()
@@ -120,7 +120,7 @@ def parse_file(path: str, me: list[str], dayfirst: bool) -> Iterator[MessageReco
             timestamp=cur["ts"],
         )
 
-    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+    with open(path, encoding="utf-8", errors="replace") as fh:
         for raw in fh:
             line = raw.rstrip("\n")
             m = LINE_RE.match(line)
