@@ -22,10 +22,9 @@ import os
 import re
 import sys
 from collections import Counter
-from typing import Iterator
+from collections.abc import Iterator
 
-sys.path.insert(0, __import__("os").path.dirname(
-    __import__("os").path.dirname(__import__("os").path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.schema import MessageRecord, read_jsonl, write_jsonl  # noqa: E402
 
 # (tag, regex). Order matters within the combined alternation: structured /
@@ -86,7 +85,7 @@ def write_manifest(path: str, args, counts: Counter, n: int) -> None:
     """Auditable record of what was scrubbed. Stores counts + file hashes only —
     never the custom literals (those are the very PII being hidden)."""
     manifest = {
-        "generated": datetime.datetime.now().isoformat(timespec="seconds"),
+        "generated": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
         "engine": "regex",
         "redaction_tags": sorted({tag for tag, _ in BUILTINS}),
         "custom_terms_count": len(args.custom),  # count only, never the strings

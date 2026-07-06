@@ -3,7 +3,8 @@
 
     python openai_finetune.py data/train.jsonl --validate-only
     python openai_finetune.py data/train.jsonl --base gpt-4.1-mini --suffix mirror-sam
-    python openai_finetune.py data/dpo_skeleton.jsonl --build-dpo --base gpt-4.1-mini -o data/dpo.jsonl
+    python openai_finetune.py data/dpo_skeleton.jsonl --build-dpo --base gpt-4.1-mini \
+        -o data/dpo.jsonl
     python openai_finetune.py data/dpo.jsonl --method dpo --base ft:... --suffix mirror-sam-dpo
 
 Validation runs with no API key. Training/DPO-build need OPENAI_API_KEY.
@@ -18,7 +19,7 @@ from collections import Counter
 
 
 def load_jsonl(path: str) -> list[dict]:
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         return [json.loads(line) for line in fh if line.strip()]
 
 
@@ -28,13 +29,17 @@ def validate_sft(rows: list[dict]) -> bool:
     for i, row in enumerate(rows):
         msgs = row.get("messages")
         if not msgs:
-            print(f"  line {i}: missing 'messages'", file=sys.stderr); ok = False; continue
+            print(f"  line {i}: missing 'messages'", file=sys.stderr)
+            ok = False
+            continue
         for m in msgs:
             roles[m.get("role")] += 1
         if msgs[-1].get("role") != "assistant":
-            print(f"  line {i}: last message must be 'assistant'", file=sys.stderr); ok = False
+            print(f"  line {i}: last message must be 'assistant'", file=sys.stderr)
+            ok = False
         if not any(m.get("role") == "user" for m in msgs):
-            print(f"  line {i}: needs at least one 'user' message", file=sys.stderr); ok = False
+            print(f"  line {i}: needs at least one 'user' message", file=sys.stderr)
+            ok = False
     print(f"Examples: {len(rows)} | role counts: {dict(roles)}", file=sys.stderr)
     if len(rows) < 10:
         print("  ⚠️  OpenAI requires ≥10 examples; aim for hundreds for a voice clone.",
@@ -47,12 +52,15 @@ def validate_dpo(rows: list[dict]) -> bool:
     ok = True
     for i, row in enumerate(rows):
         if not row.get("input", {}).get("messages"):
-            print(f"  line {i}: missing input.messages", file=sys.stderr); ok = False
+            print(f"  line {i}: missing input.messages", file=sys.stderr)
+            ok = False
         if not row.get("preferred_output"):
-            print(f"  line {i}: missing preferred_output", file=sys.stderr); ok = False
+            print(f"  line {i}: missing preferred_output", file=sys.stderr)
+            ok = False
         if not row.get("non_preferred_output"):
             print(f"  line {i}: empty non_preferred_output — run --build-dpo first "
-                  "to fill the rejected side", file=sys.stderr); ok = False
+                  "to fill the rejected side", file=sys.stderr)
+            ok = False
     print(f"DPO examples: {len(rows)} | validation: " + ("PASS" if ok else "FAIL"),
           file=sys.stderr)
     return ok
@@ -118,11 +126,13 @@ def run_job(path: str, base: str, method: str, suffix: str, epochs) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="OpenAI fine-tune driver for Mirror (Path B).")
-    ap.add_argument("input", help="train.jsonl (sft) / dpo.jsonl (dpo) / dpo_skeleton.jsonl (--build-dpo)")
+    ap.add_argument("input",
+                    help="train.jsonl (sft) / dpo.jsonl (dpo) / dpo_skeleton.jsonl (--build-dpo)")
     ap.add_argument("--base", default="gpt-4.1-mini", help="Base model or a prior ft: id.")
     ap.add_argument("--method", choices=["sft", "dpo"], default="sft")
     ap.add_argument("--suffix", default="mirror", help="Name suffix for the fine-tuned model.")
-    ap.add_argument("--epochs", type=int, default=None, help="Override n_epochs (default: let OpenAI pick).")
+    ap.add_argument("--epochs", type=int, default=None,
+                    help="Override n_epochs (default: let OpenAI pick).")
     ap.add_argument("--validate-only", action="store_true")
     ap.add_argument("--build-dpo", action="store_true",
                     help="Fill rejected outputs in a DPO skeleton by sampling --base.")

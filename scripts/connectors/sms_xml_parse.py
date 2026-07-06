@@ -13,11 +13,11 @@ import argparse
 import os
 import sys
 import xml.etree.ElementTree as ET
+from collections.abc import Iterator
 from datetime import datetime, timezone
-from typing import Iterator
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib.schema import MessageRecord, write_jsonl, iso_utc  # noqa: E402
+from lib.schema import MessageRecord, iso_utc, write_jsonl  # noqa: E402
 
 
 def parse(path: str) -> Iterator[MessageRecord]:
@@ -44,7 +44,8 @@ def parse(path: str) -> Iterator[MessageRecord]:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Parse Android SMS Backup & Restore XML to unified JSONL.")
+    ap = argparse.ArgumentParser(
+        description="Parse Android SMS Backup & Restore XML to unified JSONL.")
     ap.add_argument("input", help="The .xml backup file.")
     ap.add_argument("-o", "--output", default="-")
     args = ap.parse_args()

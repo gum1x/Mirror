@@ -157,7 +157,9 @@ Things it borrows from the field and the wider community: time-gap session windo
 ## Running the tests
 
 ```bash
-python tests/test_pipeline.py     # or: pytest
+make test                         # runs both suites; or: pytest
+python tests/test_pipeline.py     # pipeline + regression suite
+python tests/test_connectors.py   # connector regression suite
 ```
 
 The suite runs the stdlib pipeline end to end on the bundled sample and pins the bugs found in review so they don't come back. CI runs it on every push.

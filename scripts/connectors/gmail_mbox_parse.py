@@ -13,11 +13,11 @@ import mailbox
 import os
 import re
 import sys
-from email.utils import parsedate_to_datetime, getaddresses
-from typing import Iterator, Optional
+from collections.abc import Iterator
+from email.utils import getaddresses, parsedate_to_datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib.schema import MessageRecord, write_jsonl, iso_utc  # noqa: E402
+from lib.schema import MessageRecord, iso_utc, write_jsonl  # noqa: E402
 
 # Where a reply's quoted history begins — cut here and everything after.
 QUOTE_BOUNDARIES = [
@@ -69,7 +69,14 @@ def _body(msg) -> str:
             plain = text
         elif ctype == "text/html" and html is None:
             html = text
-    body = plain if plain is not None else (_html_to_text(html) if html else "")
+    # Prefer a plain part with actual content; an empty text/plain part (some
+    # clients emit one alongside the HTML) falls through to the HTML body.
+    if plain and plain.strip():
+        body = plain
+    elif html:
+        body = _html_to_text(html)
+    else:
+        body = plain or ""
     # mboxrd un-escaping: a body line that was ">From ", ">>From ", … had one
     # ">" added at export so it wouldn't look like a message separator. Reverse it
     # so the user's own prose ("From a product angle, …") is restored intact.

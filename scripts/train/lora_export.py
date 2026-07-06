@@ -31,8 +31,8 @@ import sys
 def merge(base: str, adapter: str, out: str, revision: str | None) -> None:
     try:
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
         from peft import PeftModel
+        from transformers import AutoModelForCausalLM, AutoTokenizer
     except ImportError:
         sys.exit("Merging needs the Path C deps. Install with:  pip install \".[lora]\"")
 
@@ -65,10 +65,11 @@ def to_gguf(merged_dir: str, quant: str) -> str | None:
     conv = _find_llama_cpp_converter()
     gguf_path = os.path.join(merged_dir, "model.gguf")
     if not conv:
+        quant_path = os.path.join(merged_dir, f"model.{quant}.gguf")
         print("\nllama.cpp converter not found. To make a GGUF:\n"
               "  git clone https://github.com/ggerganov/llama.cpp\n"
               f"  python llama.cpp/convert_hf_to_gguf.py {merged_dir} --outfile {gguf_path}\n"
-              f"  ./llama.cpp/llama-quantize {gguf_path} {os.path.join(merged_dir, f'model.{quant}.gguf')} {quant}",
+              f"  ./llama.cpp/llama-quantize {gguf_path} {quant_path} {quant}",
               file=sys.stderr)
         return None
     print(f"Converting to GGUF via {conv} …", file=sys.stderr)

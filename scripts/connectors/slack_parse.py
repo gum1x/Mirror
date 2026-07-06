@@ -16,48 +16,43 @@ import json
 import os
 import re
 import sys
+from collections.abc import Iterator
 from datetime import datetime, timezone
-from typing import Iterator, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib.schema import MessageRecord, write_jsonl, iso_utc  # noqa: E402
+from lib.schema import MessageRecord, iso_utc, write_jsonl  # noqa: E402
 
 MENTION = re.compile(r"<@([A-Z0-9]+)>")
 LINK = re.compile(r"<(https?://[^>|]+)(?:\|([^>]+))?>")
 
 
-def load_users(export_dir: str) -> dict[str, str]:
+def load_raw_users(export_dir: str) -> list[dict]:
     path = os.path.join(export_dir, "users.json")
-    users: dict[str, str] = {}
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as fh:
-            for u in json.load(fh):
-                name = (u.get("profile", {}).get("display_name")
-                        or u.get("real_name") or u.get("name") or u["id"])
-                users[u["id"]] = name
-    return users
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
 
 
-def resolve_me_id(users: dict[str, str], me: Optional[str], me_id: Optional[str],
-                  export_dir: str) -> Optional[str]:
+def display_names(raw_users: list[dict]) -> dict[str, str]:
+    return {u["id"]: (u.get("profile", {}).get("display_name")
+                      or u.get("real_name") or u.get("name") or u["id"])
+            for u in raw_users}
+
+
+def resolve_me_id(raw_users: list[dict], me: str | None, me_id: str | None) -> str | None:
     if me_id:
         return me_id
-    if me:
-        low = me.lower()
-        # Match against display/real/name and email in the raw users.json.
-        path = os.path.join(export_dir, "users.json")
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as fh:
-                for u in json.load(fh):
-                    prof = u.get("profile", {})
-                    fields = [u.get("name"), u.get("real_name"),
-                              prof.get("display_name"), prof.get("real_name"),
-                              prof.get("email")]
-                    if any(f and f.lower() == low for f in fields):
-                        return u["id"]
-        for uid, name in users.items():
-            if name.lower() == low:
-                return uid
+    if not me:
+        return None
+    low = me.lower()
+    # Match against display/real/name and email in users.json.
+    for u in raw_users:
+        prof = u.get("profile", {})
+        fields = [u.get("name"), u.get("real_name"),
+                  prof.get("display_name"), prof.get("real_name"), prof.get("email")]
+        if any(f and f.lower() == low for f in fields):
+            return u["id"]
     return None
 
 
@@ -67,7 +62,7 @@ def clean(text: str, users: dict[str, str]) -> str:
     return text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").strip()
 
 
-def parse(export_dir: str, me_id: Optional[str], users: dict[str, str]) -> Iterator[MessageRecord]:
+def parse(export_dir: str, me_id: str | None, users: dict[str, str]) -> Iterator[MessageRecord]:
     for jf in sorted(glob.glob(os.path.join(export_dir, "*", "*.json"))):
         channel = os.path.basename(os.path.dirname(jf))
         with open(jf, encoding="utf-8") as fh:
@@ -101,8 +96,9 @@ def main() -> None:
     if not args.me and not args.me_id:
         ap.error("provide --me or --me-id so we can flag your messages.")
 
-    users = load_users(args.input)
-    me_id = resolve_me_id(users, args.me, args.me_id, args.input)
+    raw_users = load_raw_users(args.input)
+    users = display_names(raw_users)
+    me_id = resolve_me_id(raw_users, args.me, args.me_id)
     if not me_id:
         print("⚠️  Could not resolve your Slack user id from users.json — pass --me-id. "
               "0 of your messages will be flagged.", file=sys.stderr)

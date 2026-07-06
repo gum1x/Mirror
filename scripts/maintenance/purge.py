@@ -88,7 +88,8 @@ def remote_reminder(purge_remote: bool, yes: bool) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Remove a Mirror's local artifacts (dry-run by default).")
+    ap = argparse.ArgumentParser(
+        description="Remove a Mirror's local artifacts (dry-run by default).")
     ap.add_argument("--dir", default=".", help="Working directory (default: .).")
     ap.add_argument("--what", default="data,persona,adapters,eval",
                     help="Comma list: data,persona,adapters,eval,clean (default: all but clean).")

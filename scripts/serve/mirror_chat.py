@@ -35,8 +35,8 @@ class Retriever:
 
     def _init_semantic(self) -> bool:
         try:
-            from sentence_transformers import SentenceTransformer
             import numpy as np
+            from sentence_transformers import SentenceTransformer
             self.np = np
             self.model = SentenceTransformer("all-MiniLM-L6-v2")
             emb = self.model.encode(self.texts, normalize_embeddings=True,
@@ -177,7 +177,7 @@ def repl(mirror: Mirror) -> None:
 
 def batch(mirror: Mirror, path: str, out_path: str) -> None:
     with open(path, encoding="utf-8") as fh:
-        rows = [json.loads(l) for l in fh if l.strip()]
+        rows = [json.loads(line) for line in fh if line.strip()]
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as out:
         for i, row in enumerate(rows):
@@ -200,13 +200,15 @@ def batch(mirror: Mirror, path: str, out_path: str) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description="Serve / chat with the Mirror.")
     ap.add_argument("--path", choices=["A", "B", "C"], required=True)
-    ap.add_argument("--model", help="Path A: Claude model (default claude-opus-4-8). Path B: ft: id.")
+    ap.add_argument("--model",
+                    help="Path A: Claude model (default claude-opus-4-8). Path B: ft: id.")
     ap.add_argument("--base", help="Path C: base model, e.g. Qwen/Qwen2.5-7B-Instruct.")
     ap.add_argument("--adapter", help="Path C: LoRA adapter dir.")
     ap.add_argument("--style-card", default="persona/style_card.md")
     ap.add_argument("--corpus", help="unified JSONL for RAG (your messages).")
     ap.add_argument("--rag", action="store_true", help="Enable retrieval over your messages.")
-    ap.add_argument("--semantic", action="store_true", help="Use embedding retrieval (needs sentence-transformers).")
+    ap.add_argument("--semantic", action="store_true",
+                    help="Use embedding retrieval (needs sentence-transformers).")
     ap.add_argument("--k", type=int, default=6, help="Retrieved snippets per turn.")
     ap.add_argument("--max-tokens", type=int, default=512)
     ap.add_argument("--batch", help="eval.jsonl (openai-chat) to score; with --out.")
@@ -222,7 +224,8 @@ def main() -> None:
     if os.path.exists(args.style_card):
         style_card = open(args.style_card, encoding="utf-8").read().strip()
     else:
-        print(f"(no style card at {args.style_card}; using a generic system prompt)", file=sys.stderr)
+        print(f"(no style card at {args.style_card}; using a generic system prompt)",
+              file=sys.stderr)
 
     retriever = None
     if args.rag:

@@ -15,12 +15,12 @@ REPO = Path(__file__).resolve().parent.parent
 PY = sys.executable
 
 
-def run(script, *args, stdin_path=None):
+def run(script, *args):
     """Run a Mirror script with `-o -`, return (records, stderr)."""
     cmd = [PY, str(REPO / script), *map(str, args), "-o", "-"]
     p = subprocess.run(cmd, capture_output=True, text=True)
     assert p.returncode == 0, f"{script} failed:\n{p.stderr}"
-    recs = [json.loads(l) for l in p.stdout.splitlines() if l.strip()]
+    recs = [json.loads(line) for line in p.stdout.splitlines() if line.strip()]
     return recs, p.stderr
 
 
@@ -43,7 +43,7 @@ def test_build_dataset_targets_are_mine(tmp_path):
                         "--format", "openai-chat", "-o", str(out)],
                        capture_output=True, text=True)
     assert p.returncode == 0, p.stderr
-    rows = [json.loads(l) for l in out.read_text().splitlines() if l.strip()]
+    rows = [json.loads(line) for line in out.read_text().splitlines() if line.strip()]
     assert rows, "no training examples built"
     for r in rows:
         assert r["messages"][0]["role"] == "system"
@@ -113,6 +113,34 @@ def test_gmail_mboxrd_unescape(tmp_path):
     body = recs[0]["text"]
     assert "From a product angle this is fine." in body
     assert ">From a product angle" not in body
+
+
+# ── regression: Gmail empty text/plain part must fall back to the HTML body ──
+
+def test_gmail_empty_plain_falls_back_to_html(tmp_path):
+    mbox = tmp_path / "Sent.mbox"
+    mbox.write_text(
+        "From sam@example.com Tue Mar 05 21:41:12 2024\n"
+        "From: Sam <sam@example.com>\n"
+        "To: Alex <alex@example.com>\n"
+        "Subject: multipart\n"
+        "Date: Tue, 5 Mar 2024 21:41:12 +0000\n"
+        "MIME-Version: 1.0\n"
+        'Content-Type: multipart/alternative; boundary="BOUND"\n'
+        "\n"
+        "--BOUND\n"
+        'Content-Type: text/plain; charset="utf-8"\n'
+        "\n"
+        "\n"
+        "--BOUND\n"
+        'Content-Type: text/html; charset="utf-8"\n'
+        "\n"
+        "<p>hello from the html side</p>\n"
+        "--BOUND--\n",
+        encoding="utf-8")
+    recs, _ = run("scripts/connectors/gmail_mbox_parse.py", mbox, "--me", "sam@example.com")
+    assert recs, "email with empty text/plain part was dropped"
+    assert "hello from the html side" in recs[0]["text"]
 
 
 # ── regression: Telegram single-chat export gets a real conversation id ──────

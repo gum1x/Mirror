@@ -10,12 +10,12 @@ and optionally normalizes URLs.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
-from typing import Iterator
+from collections.abc import Iterator
 
-sys.path.insert(0, __import__("os").path.dirname(
-    __import__("os").path.dirname(__import__("os").path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.schema import MessageRecord, read_jsonl, write_jsonl  # noqa: E402
 
 ZERO_WIDTH = dict.fromkeys(map(ord, "​‌‍‎‏﻿"), None)

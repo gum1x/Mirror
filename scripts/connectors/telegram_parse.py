@@ -12,11 +12,11 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Iterator
 from datetime import datetime, timezone
-from typing import Iterator, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib.schema import MessageRecord, write_jsonl, iso_utc  # noqa: E402
+from lib.schema import MessageRecord, iso_utc, write_jsonl  # noqa: E402
 
 
 def _flatten_text(text) -> str:
@@ -34,7 +34,7 @@ def _flatten_text(text) -> str:
     return ""
 
 
-def _ts(msg: dict, tz: Optional[str]) -> Optional[str]:
+def _ts(msg: dict, tz: str | None) -> str | None:
     # Prefer the absolute epoch; it's unambiguous.
     if msg.get("date_unixtime"):
         try:
@@ -68,9 +68,9 @@ def _chats(data: dict) -> Iterator[dict]:
                 yield v
 
 
-def parse(path: str, me: list[str], me_id: Optional[str], tz: Optional[str]
+def parse(path: str, me: list[str], me_id: str | None, tz: str | None
           ) -> tuple[Iterator[MessageRecord], set]:
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
 
     me_lower = {m.lower() for m in me}
