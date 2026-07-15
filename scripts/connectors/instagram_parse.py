@@ -19,9 +19,6 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.schema import MessageRecord, iso_utc, write_jsonl  # noqa: E402
 
-# Keys that mark a non-text (media/system) message we should skip.
-MEDIA_KEYS = ("photos", "videos", "audio_files", "gifs", "sticker", "share", "files")
-
 
 def _fix_mojibake(s: str) -> str:
     """Meta writes UTF-8 bytes as latin-1 escapes; reverse it when it round-trips."""
@@ -38,12 +35,10 @@ def parse_thread(path: str, me: str, source: str) -> Iterator[MessageRecord]:
     title = _fix_mojibake(data.get("title", "")) or os.path.basename(os.path.dirname(path))
     me_lower = me.lower()
     for msg in data.get("messages", []):
-        if any(k in msg for k in MEDIA_KEYS):
-            continue
-        content = msg.get("content")
-        if not content:
-            continue
-        content = _fix_mojibake(content).strip()
+        # Judge by the text, not by media keys: a photo/share sent WITH a
+        # caption keeps the caption (your words); media without text has no
+        # 'content' and is dropped here.
+        content = _fix_mojibake(msg.get("content") or "").strip()
         # Drop Meta's system/placeholder lines.
         if not content or content.endswith((" sent an attachment.", " to your message")):
             continue
