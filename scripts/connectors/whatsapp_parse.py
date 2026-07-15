@@ -39,6 +39,7 @@ LINE_RE = re.compile(
 _PLACEHOLDER_RE = re.compile(
     r"(?:<\s*Media omitted\s*>"
     r"|(?:image|video|audio|GIF|sticker|document|Contact card) omitted"
+    r"|<attached:[^>]*>"                     # iOS "export with media" variant
     r"|This message was deleted|You deleted this message|null)",
     re.IGNORECASE,
 )
@@ -48,7 +49,7 @@ def _norm_spaces(s: str) -> str:
     return s.replace(" ", " ").replace(" ", " ").replace("‎", "")
 
 
-def _parse_dt(date_s: str, time_s: str, dayfirst: bool) -> str | None:
+def _parse_dt(date_s: str, time_s: str, dayfirst: bool, tz: str | None = None) -> str | None:
     date_s, time_s = _norm_spaces(date_s).strip(), _norm_spaces(time_s).strip().upper()
     parts = re.split(r"[./-]", date_s)
     if len(parts) != 3:
@@ -64,7 +65,9 @@ def _parse_dt(date_s: str, time_s: str, dayfirst: bool) -> str | None:
         year += 2000
     rest_idx = [i for i in range(3) if i != yi]
     a, b = nums[rest_idx[0]], nums[rest_idx[1]]
-    if a > 12:        # a must be the day
+    if yi == 0:       # year-first (ISO-style) is always Y-M-D — never ambiguous
+        month, day = a, b
+    elif a > 12:      # a must be the day
         day, month = a, b
     elif b > 12:      # b must be the day
         day, month = b, a
@@ -82,14 +85,25 @@ def _parse_dt(date_s: str, time_s: str, dayfirst: bool) -> str | None:
     elif ap == "AM" and hh == 12:
         hh = 0
     try:
-        return iso_utc(datetime(year, month, day, hh, mm, ss))
+        d = datetime(year, month, day, hh, mm, ss)
     except ValueError:
         return None
+    # Export timestamps are local wall-clock; with --tz we can convert them to
+    # real UTC instead of just labeling them Z (same behavior as telegram_parse).
+    if tz:
+        try:
+            from zoneinfo import ZoneInfo
+            d = d.replace(tzinfo=ZoneInfo(tz))
+        except Exception:
+            pass
+    return iso_utc(d)
 
 
 def _is_droppable(text: str) -> bool:
     """A message body that's empty or a pure media/deleted placeholder."""
-    t = text.strip()
+    # iOS exports prefix placeholders with U+200E/200F direction marks, which
+    # str.strip() doesn't remove (format chars, not whitespace).
+    t = text.replace("‎", "").replace("‏", "").strip()
     return (not t) or bool(_PLACEHOLDER_RE.fullmatch(t))
 
 
@@ -99,7 +113,8 @@ def _convo_from_filename(path: str) -> str:
     return (m.group(1) if m else stem).strip()
 
 
-def parse_file(path: str, me: list[str], dayfirst: bool) -> Iterator[MessageRecord]:
+def parse_file(path: str, me: list[str], dayfirst: bool,
+               tz: str | None = None) -> Iterator[MessageRecord]:
     convo = _convo_from_filename(path)
     me_lower = {m.lower() for m in me}
     cur: dict | None = None
@@ -134,7 +149,7 @@ def parse_file(path: str, me: list[str], dayfirst: bool) -> Iterator[MessageReco
                 else:
                     sender, text = "", rest  # system line w/o sender
                 cur = {
-                    "ts": _parse_dt(m.group("date"), m.group("time"), dayfirst),
+                    "ts": _parse_dt(m.group("date"), m.group("time"), dayfirst, tz),
                     "sender": sender.strip(),
                     "text": text,
                 }
@@ -159,12 +174,15 @@ def main() -> None:
                     help="Your display name in the export (repeatable).")
     ap.add_argument("--dayfirst", action="store_true",
                     help="Interpret ambiguous dates as D/M (default M/D).")
+    ap.add_argument("--tz", help="IANA timezone the export was written in "
+                                 "(e.g. America/New_York); converts to real UTC. "
+                                 "Without it, local wall-clock times are labeled Z.")
     ap.add_argument("-o", "--output", default="-", help="Output .jsonl (default stdout).")
     args = ap.parse_args()
 
     def all_records() -> Iterator[MessageRecord]:
         for f in iter_inputs(args.input):
-            yield from parse_file(f, args.me, args.dayfirst)
+            yield from parse_file(f, args.me, args.dayfirst, args.tz)
 
     n = write_jsonl(all_records(), args.output)
     print(f"Wrote {n} messages → {args.output}", file=sys.stderr)
