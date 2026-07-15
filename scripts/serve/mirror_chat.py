@@ -243,7 +243,7 @@ def main() -> None:
     ap.add_argument("--k", type=int, default=6, help="Retrieved snippets per turn.")
     ap.add_argument("--max-tokens", type=int, default=512)
     ap.add_argument("--batch", help="eval.jsonl (openai-chat) to score; with --out.")
-    ap.add_argument("--out", help="Output predictions path for --batch.")
+    ap.add_argument("-o", "--out", help="Output predictions path for --batch.")
     args = ap.parse_args()
 
     if args.path == "B" and not args.model:

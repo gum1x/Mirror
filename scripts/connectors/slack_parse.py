@@ -40,18 +40,18 @@ def display_names(raw_users: list[dict]) -> dict[str, str]:
             for u in raw_users}
 
 
-def resolve_me_id(raw_users: list[dict], me: str | None, me_id: str | None) -> str | None:
+def resolve_me_id(raw_users: list[dict], me: list[str], me_id: str | None) -> str | None:
     if me_id:
         return me_id
-    if not me:
+    lows = {m.lower() for m in me}
+    if not lows:
         return None
-    low = me.lower()
-    # Match against display/real/name and email in users.json.
+    # Match any alias against display/real/name and email in users.json.
     for u in raw_users:
         prof = u.get("profile", {})
         fields = [u.get("name"), u.get("real_name"),
                   prof.get("display_name"), prof.get("real_name"), prof.get("email")]
-        if any(f and f.lower() == low for f in fields):
+        if any(f and f.lower() in lows for f in fields):
             return u["id"]
     return None
 
@@ -89,7 +89,8 @@ def parse(export_dir: str, me_id: str | None, users: dict[str, str]) -> Iterator
 def main() -> None:
     ap = argparse.ArgumentParser(description="Parse a Slack export to unified JSONL.")
     ap.add_argument("input", help="Slack export folder (contains users.json + channel dirs).")
-    ap.add_argument("--me", help="Your Slack display/real name or email.")
+    ap.add_argument("--me", action="append", default=[],
+                    help="Your Slack display/real name or email (repeatable).")
     ap.add_argument("--me-id", help="Your Slack user id, e.g. U012ABCDEF (most reliable).")
     ap.add_argument("-o", "--output", default="-")
     args = ap.parse_args()

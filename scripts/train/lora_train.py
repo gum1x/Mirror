@@ -121,7 +121,7 @@ def main() -> None:
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--max-seq-len", type=int, default=2048)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", default="adapters/mirror")
+    ap.add_argument("-o", "--out", default="adapters/mirror")
     args = ap.parse_args()
 
     rows = load_pairs(args.input)

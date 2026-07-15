@@ -103,7 +103,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Export a Path C LoRA to a portable model.")
     ap.add_argument("--base", required=True, help="Base model id (same one you trained on).")
     ap.add_argument("--adapter", required=True, help="LoRA adapter dir from lora_train.py.")
-    ap.add_argument("--out", default="merged/mirror", help="Output dir for the merged model.")
+    ap.add_argument("-o", "--out", default="merged/mirror",
+                    help="Output dir for the merged model.")
     ap.add_argument("--revision", help="Pin the base model to a commit/revision (recommended).")
     ap.add_argument("--gguf", action="store_true", help="Also convert to GGUF (needs llama.cpp).")
     ap.add_argument("--quant", default="q4_k_m", help="GGUF quantization (default q4_k_m).")

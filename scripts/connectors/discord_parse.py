@@ -23,12 +23,12 @@ from lib.schema import MessageRecord, iso_utc, write_jsonl  # noqa: E402
 KEEP_TYPES = {"Default", "Reply", "", None}
 
 
-def parse_file(path: str, me: str | None, me_id: str | None) -> Iterator[MessageRecord]:
+def parse_file(path: str, me: list[str], me_id: str | None) -> Iterator[MessageRecord]:
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
     chan = data.get("channel", {})
     convo = chan.get("name") or chan.get("id") or os.path.splitext(os.path.basename(path))[0]
-    me_lower = me.lower() if me else None
+    me_lower = {m.lower() for m in me}
     for m in data.get("messages", []):
         if m.get("type") not in KEEP_TYPES:
             continue
@@ -37,8 +37,8 @@ def parse_file(path: str, me: str | None, me_id: str | None) -> Iterator[Message
             continue
         author = m.get("author", {})
         is_me = (me_id is not None and author.get("id") == me_id) or \
-                (me_lower is not None and me_lower in
-                 {(author.get("name") or "").lower(), (author.get("nickname") or "").lower()})
+                bool(me_lower & {(author.get("name") or "").lower(),
+                                 (author.get("nickname") or "").lower()})
         ts = None
         if m.get("timestamp"):
             try:
@@ -54,7 +54,9 @@ def parse_file(path: str, me: str | None, me_id: str | None) -> Iterator[Message
 def main() -> None:
     ap = argparse.ArgumentParser(description="Parse DiscordChatExporter JSON to unified JSONL.")
     ap.add_argument("input", help="A DiscordChatExporter .json or a folder of them.")
-    ap.add_argument("--me", help="Your Discord username or nickname.")
+    ap.add_argument("--me", action="append", default=[],
+                    help="Your Discord username or nickname (repeatable — names "
+                         "change across export epochs).")
     ap.add_argument("--me-id", help="Your Discord user id (most reliable).")
     ap.add_argument("-o", "--output", default="-")
     args = ap.parse_args()
