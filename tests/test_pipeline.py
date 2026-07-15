@@ -72,6 +72,30 @@ def test_whatsapp_keeps_messages_with_systemish_words(tmp_path):
     assert all("end-to-end encrypted" not in t for t in texts)  # senderless system line dropped
 
 
+# ── regression: normalize must not decompose emoji or drop one-word replies ──
+
+def test_normalize_preserves_zwj_and_keeps_one_word_messages(tmp_path):
+    src = tmp_path / "in.jsonl"
+    recs_in = [
+        {"source": "whatsapp", "conversation_id": "x", "is_from_me": True, "sender": "me",
+         "text": "\U0001f469‍\U0001f4bb love this"},   # 👩‍💻 (ZWJ sequence)
+        {"source": "whatsapp", "conversation_id": "x", "is_from_me": True, "sender": "me",
+         "text": "می‌خواهم"},  # Persian with ZWNJ
+        {"source": "whatsapp", "conversation_id": "x", "is_from_me": True, "sender": "me",
+         "text": "video"},           # a genuine one-word reply, not a placeholder
+        {"source": "whatsapp", "conversation_id": "x", "is_from_me": True, "sender": "me",
+         "text": "video omitted"},   # a placeholder — must still be dropped
+    ]
+    src.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in recs_in),
+                   encoding="utf-8")
+    recs, _ = run("scripts/format/normalize.py", src)
+    texts = [r["text"] for r in recs]
+    assert "\U0001f469‍\U0001f4bb love this" in texts   # emoji stays composed
+    assert "می‌خواهم" in texts  # ZWNJ kept
+    assert "video" in texts                                  # real message kept
+    assert all("omitted" not in t for t in texts)            # placeholder dropped
+
+
 # ── regression: PII scrubber coverage + no over/under-match ──────────────────
 
 def test_pii_scrub_coverage_and_precision(tmp_path):
