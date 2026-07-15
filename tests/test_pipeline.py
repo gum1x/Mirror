@@ -110,6 +110,24 @@ def test_pii_scrub_coverage_and_precision(tmp_path):
     assert "1234567" in t                              # no separators ⇒ not a phone
 
 
+def test_pii_scrub_compact_phones_and_dashless_ssn(tmp_path):
+    src = tmp_path / "in.jsonl"
+    rec = {"source": "whatsapp", "conversation_id": "x", "is_from_me": True, "sender": "me",
+           "text": ("text me at 5551234567 or +15551234567, landline 867-5309, "
+                    "ssn is 123456789, order 1234567 arrived, see you in 2023-2024")}
+    src.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    recs, _ = run("scripts/format/pii_scrub.py", src)
+    t = recs[0]["text"]
+    # compact / E.164 phones and dashed 7-digit numbers must be redacted
+    assert "5551234567" not in t and "<PHONE>" in t
+    assert "867-5309" not in t
+    # SSN without dashes must be redacted
+    assert "123456789" not in t and "<SSN>" in t
+    # precision: bare 7-digit ids and year ranges stay
+    assert "order 1234567 arrived" in t
+    assert "2023-2024" in t
+
+
 # ── regression: Gmail mboxrd un-escaping ─────────────────────────────────────
 
 def test_gmail_mboxrd_unescape(tmp_path):
