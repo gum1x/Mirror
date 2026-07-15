@@ -59,7 +59,10 @@ python scripts/format/build_dataset.py data/scrubbed.jsonl \
 
 # Path C (local LoRA) — ShareGPT (or --format chatml for ChatML-native trainers)
 python scripts/format/build_dataset.py data/scrubbed.jsonl \
-    --format sharegpt --system-file persona/style_card.md -o data/train.json
+    --format sharegpt --system-file persona/style_card.md \
+    --holdout 0.1 -o data/train.json
+# also writes data/eval.json — the eval split is emitted as openai-chat JSONL
+# (regardless of --format) so mirror_chat.py --batch can replay it
 
 # Path B refinement (DPO) — preference skeleton (training step fills the rejected side)
 python scripts/format/build_dataset.py data/scrubbed.jsonl \

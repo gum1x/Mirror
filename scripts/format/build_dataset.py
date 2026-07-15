@@ -251,10 +251,15 @@ def main() -> None:
 
     rng.shuffle(train_pairs)
     train = [render(args.format, system, c, t) for c, t in train_pairs]
-    evals = [render(args.format, system, c, t) for c, t in eval_pairs]
+    # The eval split exists to be replayed through `mirror_chat.py --batch`,
+    # which reads openai-chat JSONL per line — a sharegpt JSON array can't be
+    # consumed by anything downstream, so evals for sharegpt builds are
+    # rendered (and written) as openai-chat instead.
+    eval_fmt = "openai-chat" if args.format == "sharegpt" else args.format
+    evals = [render(eval_fmt, system, c, t) for c, t in eval_pairs]
 
-    def write_rows(out, rows: list[dict]) -> None:
-        if args.format == "sharegpt":
+    def write_rows(out, rows: list[dict], fmt: str) -> None:
+        if fmt == "sharegpt":
             json.dump(rows, out, ensure_ascii=False, indent=0)
         else:
             for row in rows:
@@ -262,23 +267,25 @@ def main() -> None:
 
     msg = f"Wrote {len(train)} training examples → {args.output}"
     if args.output == "-":
-        write_rows(sys.stdout, train)
+        write_rows(sys.stdout, train, args.format)
     else:
-        pending = [(train, args.output)]
+        pending = [(train, args.format, args.output)]
         if args.holdout > 0:
             ep = eval_path_for(args.output)
-            pending.append((evals, ep))
+            pending.append((evals, eval_fmt, ep))
             msg += f"; {len(evals)} eval examples → {ep}"
+            if eval_fmt != args.format:
+                msg += f" (as {eval_fmt} JSONL, for mirror_chat.py --batch)"
         # Stage every file first and swap them into place together, so a crash
         # can't pair a fresh train file with a stale eval file from a prior run.
         staged = []
         try:
-            for rows, path in pending:
+            for rows, fmt, path in pending:
                 os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
                 tmp = path + ".tmp"
                 staged.append((tmp, path))
                 with open(tmp, "w", encoding="utf-8") as out:
-                    write_rows(out, rows)
+                    write_rows(out, rows, fmt)
         except BaseException:
             for tmp, _ in staged:
                 try:
