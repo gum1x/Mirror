@@ -228,8 +228,8 @@ def batch(mirror: Mirror, path: str, out_path: str) -> None:
     print(f"Wrote predictions → {out_path}", file=sys.stderr)
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description="Serve / chat with the Mirror.")
+def add_serving_args(ap: argparse.ArgumentParser) -> None:
+    """Flags shared by this CLI and mirror_server.py — one definition, no drift."""
     ap.add_argument("--path", choices=["A", "B", "C"], required=True)
     ap.add_argument("--model",
                     help="Path A: Claude model (default claude-opus-4-8). Path B: ft: id.")
@@ -242,31 +242,42 @@ def main() -> None:
                     help="Use embedding retrieval (needs sentence-transformers).")
     ap.add_argument("--k", type=int, default=6, help="Retrieved snippets per turn.")
     ap.add_argument("--max-tokens", type=int, default=512)
-    ap.add_argument("--batch", help="eval.jsonl (openai-chat) to score; with --out.")
-    ap.add_argument("-o", "--out", help="Output predictions path for --batch.")
-    args = ap.parse_args()
 
+
+def validate_serving_args(ap: argparse.ArgumentParser, args) -> None:
     if args.path == "B" and not args.model:
         ap.error("--path B needs --model ft:...")
     if args.path == "C" and not args.base:
         ap.error("--path C needs --base (and usually --adapter)")
+    if args.rag and not args.corpus:
+        ap.error("--rag needs --corpus path/to/messages.jsonl")
 
+
+def build_mirror(args) -> Mirror:
+    """Style card + retriever + Mirror, shared with mirror_server.py."""
     style_card = ""
     if os.path.exists(args.style_card):
         style_card = open(args.style_card, encoding="utf-8").read().strip()
     else:
         print(f"(no style card at {args.style_card}; using a generic system prompt)",
               file=sys.stderr)
-
     retriever = None
     if args.rag:
-        if not args.corpus:
-            ap.error("--rag needs --corpus path/to/messages.jsonl")
         texts = load_corpus(args.corpus)
         print(f"RAG index: {len(texts)} of your messages.", file=sys.stderr)
         retriever = Retriever(texts, args.semantic)
+    return Mirror(args, style_card, retriever)
 
-    mirror = Mirror(args, style_card, retriever)
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Serve / chat with the Mirror.")
+    add_serving_args(ap)
+    ap.add_argument("--batch", help="eval.jsonl (openai-chat) to score; with --out.")
+    ap.add_argument("-o", "--out", help="Output predictions path for --batch.")
+    args = ap.parse_args()
+    validate_serving_args(ap, args)
+
+    mirror = build_mirror(args)
     if args.batch:
         if not args.out:
             ap.error("--batch needs --out")

@@ -18,13 +18,10 @@ import sys
 from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from lib import style_metrics  # noqa: E402
 from lib.schema import read_jsonl  # noqa: E402
+from lib.style_metrics import EMOJI, WORD  # noqa: E402  (shared with style_eval)
 
-EMOJI = re.compile(
-    "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F0FF"
-    "\U00002B00-\U00002BFF\U0001F1E6-\U0001F1FF\U00002190-\U000021FF\U0000FE0F]"
-)
-WORD = re.compile(r"[a-zA-Z']+")
 SLANG = ["lol", "lmao", "rofl", "idk", "idc", "tbh", "ngl", "imo", "imho",
          "fr", "ong", "istg", "smh", "iirc", "btw", "rn", "ttyl", "omw", "wyd",
          "hbu", "ily", "nvm", "wtf", "af", "lowkey", "highkey", "deadass", "bet"]
@@ -42,8 +39,6 @@ def analyze(messages: list[str], name: str) -> dict:
     low = joined.lower()
 
     emoji_hits = EMOJI.findall(joined)
-    all_lower = sum(1 for m in messages if m and m == m.lower() and any(c.isalpha() for c in m))
-    no_end_punct = sum(1 for m in messages if m and m.rstrip()[-1:] not in ".?!")
     ellipsis = low.count("...")
     exclaim = joined.count("!")
     lone_i = len(re.findall(r"(?<![A-Za-z])i(?![A-Za-z'])", joined))  # lowercase standalone "i"
@@ -70,19 +65,22 @@ def analyze(messages: list[str], name: str) -> dict:
         "name": name,
         "message_count": n,
         "length": {
-            "chars_mean": round(statistics.mean(char_lens), 1) if n else 0,
+            # the four fingerprint metrics come from lib.style_metrics so that
+            # style_eval measures predictions with the exact same definitions
+            "chars_mean": round(style_metrics.chars_mean(messages), 1) if n else 0,
             "chars_median": int(statistics.median(char_lens)) if n else 0,
             "words_mean": round(statistics.mean(word_lens), 1) if n else 0,
             "very_short_ratio": pct(sum(1 for c in char_lens if c <= 15)),
             "long_ratio": pct(sum(1 for c in char_lens if c >= 120)),
         },
         "style": {
-            "all_lowercase_ratio": pct(all_lower),
-            "no_end_punctuation_ratio": pct(no_end_punct),
+            "all_lowercase_ratio": round(style_metrics.all_lowercase_ratio(messages), 3),
+            "no_end_punctuation_ratio":
+                round(style_metrics.no_end_punctuation_ratio(messages), 3),
             "lowercase_standalone_i": lone_i,
             "exclaims_per_msg": round(exclaim / n, 3) if n else 0,
             "ellipsis_count": ellipsis,
-            "emoji_per_msg": round(len(emoji_hits) / n, 3) if n else 0,
+            "emoji_per_msg": round(style_metrics.emoji_per_msg(messages), 3),
         },
         "top_emoji": [e for e, _ in Counter(emoji_hits).most_common(8)],
         "favorite_words": [w for w, _ in Counter(content).most_common(25)],
