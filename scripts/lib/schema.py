@@ -25,6 +25,7 @@ voice the model learns; everyone else becomes *context*.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass, field
@@ -86,16 +87,32 @@ def iso_utc(dt: datetime) -> str:
 
 
 def write_jsonl(records: Iterable[MessageRecord], path: str) -> int:
-    """Write records to a .jsonl file (or '-' for stdout). Returns the count."""
+    """Write records to a .jsonl file (or '-' for stdout). Returns the count.
+
+    File output is staged to `path + ".tmp"` and swapped into place only on
+    success, so an in-place run (output == input) can't truncate its own input
+    before reading it, and a crash mid-stream can't leave a half-written file
+    that looks complete.
+    """
     n = 0
-    out = sys.stdout if path == "-" else open(path, "w", encoding="utf-8")
-    try:
+    if path == "-":
         for rec in records:
-            out.write(rec.to_json() + "\n")
+            sys.stdout.write(rec.to_json() + "\n")
             n += 1
-    finally:
-        if out is not sys.stdout:
-            out.close()
+        return n
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as out:
+            for rec in records:
+                out.write(rec.to_json() + "\n")
+                n += 1
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+    os.replace(tmp, path)
     return n
 
 

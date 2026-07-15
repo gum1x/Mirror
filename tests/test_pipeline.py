@@ -36,6 +36,22 @@ def test_schema_validate_sample():
     assert report["from_me"] + report["from_others"] == report["total_messages"]
 
 
+def test_write_jsonl_in_place_does_not_truncate_input(tmp_path):
+    src = tmp_path / "clean.jsonl"
+    rec = {"source": "whatsapp", "conversation_id": "x", "is_from_me": True,
+           "sender": "me", "text": "hello world"}
+    src.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    # same file as input and output — must not truncate the input before reading
+    p = subprocess.run([PY, str(REPO / "scripts/format/normalize.py"),
+                        str(src), "-o", str(src)],
+                       capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    lines = [ln for ln in src.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(lines) == 1, "in-place run truncated the corpus"
+    assert json.loads(lines[0])["text"] == "hello world"
+    assert not (tmp_path / "clean.jsonl.tmp").exists()   # no staging file left behind
+
+
 def test_build_dataset_targets_are_mine(tmp_path):
     out = tmp_path / "train.jsonl"
     p = subprocess.run([PY, str(REPO / "scripts/format/build_dataset.py"),

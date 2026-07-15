@@ -96,8 +96,10 @@ def write_manifest(path: str, args, counts: Counter, n: int) -> None:
         "output": {"path": args.output, "sha256": _sha256(args.output)}
         if args.output != "-" and os.path.isfile(args.output) else None,
     }
-    with open(path, "w", encoding="utf-8") as fh:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2)
+    os.replace(tmp, path)
     print(f"Wrote redaction manifest → {path}", file=sys.stderr)
 
 
