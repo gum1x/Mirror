@@ -128,6 +128,28 @@ def test_build_dataset_orders_by_parsed_time_not_string(tmp_path):
     assert user_turn["content"] == "hey\nyou coming tonight?"   # chronological order
 
 
+# ── regression: no silent fallbacks in build_dataset ─────────────────────────
+
+def test_build_dataset_missing_system_file_is_an_error(tmp_path):
+    p = subprocess.run([PY, str(REPO / "scripts/format/build_dataset.py"),
+                        str(REPO / "examples/sample_messages.jsonl"),
+                        "--system-file", str(tmp_path / "nope.md"),
+                        "-o", str(tmp_path / "train.jsonl")],
+                       capture_output=True, text=True)
+    assert p.returncode != 0, "typo'd --system-file must not fall back silently"
+    assert "nope.md" in p.stderr
+    assert not (tmp_path / "train.jsonl").exists()
+
+
+def test_build_dataset_holdout_requires_file_output():
+    p = subprocess.run([PY, str(REPO / "scripts/format/build_dataset.py"),
+                        str(REPO / "examples/sample_messages.jsonl"),
+                        "--holdout", "0.2", "-o", "-"],
+                       capture_output=True, text=True)
+    assert p.returncode != 0, "--holdout with stdout silently discarded the eval split"
+    assert "holdout" in p.stderr.lower()
+
+
 # ── regression: WhatsApp must NOT drop real messages containing system words ──
 
 def test_whatsapp_keeps_messages_with_systemish_words(tmp_path):

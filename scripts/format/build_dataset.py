@@ -34,7 +34,13 @@ DEFAULT_SYSTEM = ("You are the user. Reply exactly as they would — matching th
 
 
 def load_system(path: str | None) -> str:
-    if path and os.path.exists(path):
+    if path:
+        # An explicitly requested style card that doesn't exist must be an
+        # error: silently falling back to the generic prompt builds (and pays
+        # for) a fine-tune without the persona, with no hint anything is off.
+        if not os.path.exists(path):
+            sys.exit(f"--system-file {path} does not exist. Fix the path, or drop "
+                     "the flag to use the built-in default prompt.")
         with open(path, encoding="utf-8") as fh:
             return fh.read().strip()
     return DEFAULT_SYSTEM
@@ -234,6 +240,9 @@ def main() -> None:
     ap.add_argument("-o", "--output", default="-")
     args = ap.parse_args()
 
+    if args.holdout > 0 and args.output == "-":
+        ap.error("--holdout needs a file output (-o path.jsonl): the eval split "
+                 "has nowhere to go when the training set is written to stdout.")
     system = load_system(args.system_file)
     rng = random.Random(args.seed)
     groups, stats = group_and_order(rec for p in args.inputs for rec in read_jsonl(p))
