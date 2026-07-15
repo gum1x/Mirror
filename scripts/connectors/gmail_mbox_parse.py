@@ -25,10 +25,13 @@ QUOTE_BOUNDARIES = [
     re.compile(r"^-----Original Message-----\s*$"),
     re.compile(r"^_{5,}\s*$"),
     re.compile(r"^From:\s.*$", re.I),          # Outlook quoted header block
-    re.compile(r"^\s*>"),                       # quoted lines
     re.compile(r"^-- \s*$"),                    # standard signature delimiter
     re.compile(r"^Sent from my \w+", re.I),     # mobile signatures
 ]
+# A '>'-quoted line is skipped on its own, NOT treated as a cut point: bottom-
+# posters and inline repliers compose *below/between* quoted lines, and cutting
+# at the first '>' deleted their entire reply.
+QUOTED_LINE = re.compile(r"^\s*>")
 
 
 def _strip_quotes_and_sig(body: str) -> str:
@@ -36,6 +39,8 @@ def _strip_quotes_and_sig(body: str) -> str:
     for line in body.splitlines():
         if any(rx.match(line) for rx in QUOTE_BOUNDARIES):
             break
+        if QUOTED_LINE.match(line):
+            continue
         out.append(line)
     return "\n".join(out).strip()
 
