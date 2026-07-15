@@ -13,7 +13,10 @@ description: >-
 
 Never ship on vibes. Score the Mirror on the **held-out** conversations
 (`data/eval.jsonl`, created by `build_dataset.py --holdout 0.1`) — data it was
-never trained on, so you measure generalization, not memorization.
+never trained on, so you measure generalization, not memorization. This applies
+to every path, including Path C: pass `--holdout` on the dataset build (the
+eval split is always emitted as openai-chat JSONL, even for sharegpt builds,
+so `mirror_chat.py --batch` can replay it).
 
 ## 1. Generate the Mirror's replies on the holdout
 

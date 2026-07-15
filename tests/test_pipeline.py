@@ -249,6 +249,29 @@ def test_pii_scrub_compact_phones_and_dashless_ssn(tmp_path):
     assert "2023-2024" in t
 
 
+# ── regression: sharegpt builds must emit an eval split --batch can consume ──
+
+def test_sharegpt_eval_split_is_openai_chat_jsonl(tmp_path):
+    out = tmp_path / "train.json"
+    p = subprocess.run([PY, str(REPO / "scripts/format/build_dataset.py"),
+                        str(REPO / "examples/sample_messages.jsonl"),
+                        "--format", "sharegpt", "--holdout", "0.5", "--seed", "0",
+                        "-o", str(out)],
+                       capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    # the train file stays a sharegpt JSON array (what LoRA trainers read)
+    assert isinstance(json.loads(out.read_text(encoding="utf-8")), list)
+    # the eval split must be openai-chat JSONL — mirror_chat.py --batch does a
+    # per-line json.loads and expects {"messages": [...]}
+    evalp = tmp_path / "eval.json"
+    assert evalp.exists(), p.stderr
+    rows = [json.loads(ln) for ln in evalp.read_text(encoding="utf-8").splitlines()
+            if ln.strip()]
+    assert rows, "expected eval examples with --holdout 0.5 --seed 0"
+    for r in rows:
+        assert r["messages"][-1]["role"] == "assistant"
+
+
 # ── regression: Gmail mboxrd un-escaping ─────────────────────────────────────
 
 def test_gmail_mboxrd_unescape(tmp_path):
