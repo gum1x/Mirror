@@ -18,10 +18,14 @@ from collections.abc import Iterator
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.schema import MessageRecord, read_jsonl, write_jsonl  # noqa: E402
 
-ZERO_WIDTH = dict.fromkeys(map(ord, "​‌‍‎‏﻿"), None)
+# Strip zero-width space / direction marks / BOM, but keep ZWJ (U+200D) and
+# ZWNJ (U+200C): they're meaningful — ZWJ composes emoji sequences (👩‍💻, ❤️‍🔥)
+# and ZWNJ is orthographic in Persian/Farsi. Removing them mangles the voice.
+ZERO_WIDTH = dict.fromkeys(map(ord, "​‎‏﻿"), None)
 URL_RE = re.compile(r"https?://\S+|www\.\S+")
-MEDIA_ONLY = re.compile(r"^\s*(<?\s*media omitted\s*>?|image|video|audio|gif|sticker"
-                        r"|document)\s*(omitted)?\s*$", re.I)
+# "omitted" is required: a bare "video" or "sticker" is a real one-word reply.
+MEDIA_ONLY = re.compile(r"^\s*<?\s*(media|image|video|audio|gif|sticker"
+                        r"|document)\s+omitted\s*>?\s*$", re.I)
 
 
 def clean_text(text: str, drop_urls: bool) -> str:
