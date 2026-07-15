@@ -31,12 +31,12 @@ def _fix_mojibake(s: str) -> str:
         return s
 
 
-def parse_thread(path: str, me: str, source: str) -> Iterator[MessageRecord]:
+def parse_thread(path: str, me: list[str], source: str) -> Iterator[MessageRecord]:
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
 
     title = _fix_mojibake(data.get("title", "")) or os.path.basename(os.path.dirname(path))
-    me_lower = me.lower()
+    me_lower = {m.lower() for m in me}
     for msg in data.get("messages", []):
         if any(k in msg for k in MEDIA_KEYS):
             continue
@@ -48,7 +48,7 @@ def parse_thread(path: str, me: str, source: str) -> Iterator[MessageRecord]:
         if not content or content.endswith((" sent an attachment.", " to your message")):
             continue
         sender = _fix_mojibake(msg.get("sender_name", "")).strip()
-        is_me = sender.lower() == me_lower
+        is_me = sender.lower() in me_lower
         ts = None
         if msg.get("timestamp_ms"):
             ts = iso_utc(datetime.fromtimestamp(msg["timestamp_ms"] / 1000, tz=timezone.utc))
@@ -61,7 +61,9 @@ def parse_thread(path: str, me: str, source: str) -> Iterator[MessageRecord]:
 def main() -> None:
     ap = argparse.ArgumentParser(description="Parse Meta (IG/Messenger) JSON to unified JSONL.")
     ap.add_argument("input", help="The `inbox` folder (or a single message_*.json).")
-    ap.add_argument("--me", required=True, help="Your display name as it appears in sender_name.")
+    ap.add_argument("--me", action="append", required=True,
+                    help="Your display name as it appears in sender_name (repeatable — "
+                         "it changes across export epochs).")
     ap.add_argument("--source", default="instagram", choices=["instagram", "messenger"])
     ap.add_argument("-o", "--output", default="-", help="Output .jsonl (default stdout).")
     args = ap.parse_args()

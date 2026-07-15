@@ -128,6 +128,51 @@ def test_instagram_mojibake_and_media_drop(tmp_path):
     assert all(r["conversation_id"] == "Alex" for r in recs)
 
 
+# ── --me must be repeatable everywhere (display names change over the years) ──
+
+def test_me_flag_repeatable_discord_slack_instagram(tmp_path):
+    # Discord: two eras of your username — both must flag as you
+    dm = tmp_path / "dm.json"
+    dm.write_text(json.dumps({
+        "channel": {"name": "alex-dm", "id": "99"},
+        "messages": [
+            {"id": "1", "type": "Default", "timestamp": "2024-03-05T21:50:00.000+00:00",
+             "author": {"id": "7", "name": "sam_old"}, "content": "first era"},
+            {"id": "2", "type": "Default", "timestamp": "2024-03-05T21:51:00.000+00:00",
+             "author": {"id": "8", "name": "sam_new"}, "content": "second era"},
+        ],
+    }), encoding="utf-8")
+    recs, _ = run("scripts/connectors/discord_parse.py", dm,
+                  "--me", "sam_old", "--me", "sam_new")
+    assert all(r["is_from_me"] for r in recs), "second --me silently dropped the first"
+
+    # Slack: first alias resolves, extra alias must not clobber it
+    sl = tmp_path / "slack"
+    sl.mkdir()
+    (sl / "users.json").write_text('[{"id":"U1","profile":{"display_name":"Sam"}}]',
+                                   encoding="utf-8")
+    chan = sl / "dm"
+    chan.mkdir()
+    (chan / "2024-01-01.json").write_text(
+        '[{"type":"message","user":"U1","ts":"1.0","text":"hi"}]', encoding="utf-8")
+    recs, _ = run("scripts/connectors/slack_parse.py", sl, "--me", "Sam", "--me", "OldNick")
+    assert recs and recs[0]["is_from_me"] is True
+
+    # Instagram: name shown differently across export epochs
+    thread = tmp_path / "inbox" / "alex_123"
+    thread.mkdir(parents=True)
+    (thread / "message_1.json").write_text(json.dumps({
+        "participants": [{"name": "Sam"}, {"name": "Alex"}], "title": "Alex",
+        "messages": [
+            {"sender_name": "Sam", "timestamp_ms": 1709675400000, "content": "era one"},
+            {"sender_name": "Sam Rivera", "timestamp_ms": 1709675500000, "content": "era two"},
+        ],
+    }), encoding="utf-8")
+    recs, _ = run("scripts/connectors/instagram_parse.py", tmp_path / "inbox",
+                  "--me", "Sam", "--me", "Sam Rivera")
+    assert all(r["is_from_me"] for r in recs)
+
+
 # ── iMessage generic JSON import ─────────────────────────────────────────────
 
 def test_imessage_json_uses_date_when_timestamp_missing(tmp_path):
