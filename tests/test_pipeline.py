@@ -72,6 +72,23 @@ def test_whatsapp_keeps_messages_with_systemish_words(tmp_path):
     assert all("end-to-end encrypted" not in t for t in texts)  # senderless system line dropped
 
 
+def test_whatsapp_iso_dates_tz_and_ios_placeholders(tmp_path):
+    f = tmp_path / "WhatsApp Chat with Pat.txt"
+    f.write_text(
+        "[2024-03-05, 9:41:12 PM] Sam: hello there\n"
+        "[2024-03-05, 9:42:00 PM] Sam: ‎image omitted\n"
+        "[2024-03-05, 9:43:00 PM] Sam: ‎<attached: 00000042-PHOTO-2024-03-05.jpg>\n",
+        encoding="utf-8")
+    # year-first dates are unambiguous: --dayfirst must not swap month/day
+    recs, _ = run("scripts/connectors/whatsapp_parse.py", f, "--me", "Sam", "--dayfirst")
+    assert [r["text"] for r in recs] == ["hello there"]     # iOS placeholders dropped
+    assert recs[0]["timestamp"] == "2024-03-05T21:41:12Z"   # not 2024-05-03
+    # --tz interprets the export's local wall-clock and converts to real UTC
+    recs, _ = run("scripts/connectors/whatsapp_parse.py", f, "--me", "Sam",
+                  "--tz", "America/New_York")
+    assert recs[0]["timestamp"] == "2024-03-06T02:41:12Z"   # EST is UTC-5 on Mar 5
+
+
 # ── regression: PII scrubber coverage + no over/under-match ──────────────────
 
 def test_pii_scrub_coverage_and_precision(tmp_path):
