@@ -19,6 +19,12 @@ affected file/stage.
   **not** reliably catch names or unusual formats. Treat the privacy notes as
   guidance, not a guarantee. Always review what you're about to upload, and use
   `--custom` (and, optionally, an NER tool such as Microsoft Presidio) for names.
+- Scrubbing applies to **message text only**. Metadata fields — `sender`,
+  `conversation_id`, and e.g. Gmail's `extra.subject` — keep raw phone numbers,
+  emails, and subject lines in `data/scrubbed.jsonl` (for iMessage/SMS the
+  sender *is* a phone number). Dataset building and RAG only use the text, so
+  this metadata stays local, but the file itself still contains your contact
+  graph — treat it accordingly.
 
 ## Handling secrets
 

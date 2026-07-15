@@ -125,7 +125,9 @@ def main() -> None:
     summary = ", ".join(f"{k}:{v}" for k, v in sorted(counts.items())) or "none found"
     print(f"Redactions — {summary}", file=sys.stderr)
     print("Reminder: names and unusual formats are not auto-detected; use --custom "
-          "for those (see header).", file=sys.stderr)
+          "for those (see header). Only message TEXT is scrubbed — sender/"
+          "conversation_id metadata keeps raw contact info (stays local).",
+          file=sys.stderr)
     if not args.report:
         print(f"Wrote {n} messages → {args.output}", file=sys.stderr)
         if args.manifest is not None:
