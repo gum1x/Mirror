@@ -33,15 +33,19 @@ BUILTINS = [
     ("<URL>", r"https?://\S+|www\.\S+"),
     ("<EMAIL>", r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b"),
     ("<CARD>", r"\b\d(?:[ -]?\d){12,15}\b"),                       # ends on a digit
-    ("<SSN>", r"\b\d{3}-\d{2}-\d{4}\b"),
+    ("<SSN>", r"\b\d{3}-\d{2}-\d{4}\b|(?<!\w)\d{9}(?!\w)"),          # dashed or bare 9 digits
     ("<IP>", r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
     ("<DOB>", r"\b(?:0?[1-9]|1[0-2])[/-](?:0?[1-9]|[12]\d|3[01])[/-](?:19|20)\d\d\b"),
     ("<ADDRESS>", r"\b\d{1,5}\s+(?:[A-Za-z]+\.?\s+){1,4}"
                   r"(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Ln|Lane|Dr|Drive|"
                   r"Ct|Court|Way|Pl|Place|Ter|Terrace|Hwy|Highway)\b\.?"),
-    # Phone: require >=2 separated digit groups so bare IDs/timestamps don't match,
-    # and consume the whole token so no prefix leaks.
-    ("<PHONE>", r"(?<!\w)\+?\(?\d{1,4}\)?(?:[ .\-]\d{2,4}){2,4}(?!\w)"),
+    # Phone, consuming the whole token so no prefix leaks. Alternatives:
+    # separated digit groups (>=2 so bare ids don't match) · contiguous
+    # international with '+' (E.164, how iMessage/WhatsApp render numbers) ·
+    # compact US 10/11 digit · dashed area-number and 7-digit local forms.
+    # Bare 7-8 digit runs stay (order ids); bare 9 digit runs are <SSN> above.
+    ("<PHONE>", r"(?<!\w)(?:\+?\(?\d{1,4}\)?(?:[ .\-]\d{2,4}){2,4}"
+                r"|\+\d{7,15}|1?\d{10}|\d{3,4}-\d{6,8}|\d{3}-\d{4})(?!\w)"),
 ]
 
 
