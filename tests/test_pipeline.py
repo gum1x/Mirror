@@ -155,6 +155,20 @@ def test_telegram_single_chat_convo_id(tmp_path):
     assert recs and recs[0]["conversation_id"] == "ChatWithJordan"   # not "telegram"
 
 
+def test_telegram_zero_mine_warning_lists_senders(tmp_path):
+    res = tmp_path / "result.json"
+    res.write_text(json.dumps({"messages": [
+        {"id": 1, "type": "message", "date_unixtime": "1712049720",
+         "from": "Jordan", "from_id": "user222", "text": "hey"},
+        {"id": 2, "type": "message", "date_unixtime": "1712049730",
+         "from": "Jordan", "from_id": "user222", "text": "you there?"},
+    ]}), encoding="utf-8")
+    recs, err = run("scripts/connectors/telegram_parse.py", res, "--me", "Sam")
+    assert len(recs) == 2 and all(not r["is_from_me"] for r in recs)
+    assert "0 from you" in err or "0 of your messages" in err
+    assert "Jordan" in err                     # seen senders listed in the hint
+
+
 if __name__ == "__main__":
     # Lightweight runner so the suite works without pytest installed.
     import traceback

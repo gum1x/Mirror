@@ -120,10 +120,17 @@ def main() -> None:
         ap.error("provide --me and/or --me-id so we can flag your messages.")
 
     records, seen = parse(args.input, args.me, args.me_id, args.tz)
-    # Materialize so we can report seen senders even on stdout.
-    records = list(records)
-    n = write_jsonl(iter(records), args.output)
-    mine = sum(1 for r in records if r.is_from_me)
+    # Count while streaming: materializing every record doubled peak memory on
+    # top of the already-loaded result.json (full-account exports run to GBs).
+    counts = {"mine": 0}
+
+    def counted() -> Iterator[MessageRecord]:
+        for r in records:
+            counts["mine"] += int(r.is_from_me)
+            yield r
+
+    n = write_jsonl(counted(), args.output)
+    mine = counts["mine"]
     print(f"Wrote {n} messages ({mine} from you) → {args.output}", file=sys.stderr)
     if mine == 0:
         print("⚠️  Found 0 of your messages. Senders seen: "
