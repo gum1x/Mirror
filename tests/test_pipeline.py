@@ -70,6 +70,27 @@ def test_build_dataset_targets_are_mine(tmp_path):
     assert (tmp_path / "DATASET_CARD.md").exists()         # provenance card emitted
 
 
+# ── regression: conversations must sort by parsed time, not timestamp string ──
+
+def test_build_dataset_orders_by_parsed_time_not_string(tmp_path):
+    # "…12.500000Z" sorts BEFORE "…12Z" as a string ('.' < 'Z'); parsed, it's after.
+    src = tmp_path / "msgs.jsonl"
+    recs_in = [
+        {"source": "slack", "conversation_id": "c", "is_from_me": False, "sender": "Pat",
+         "timestamp": "2024-03-05T21:41:12Z", "text": "hey"},
+        {"source": "slack", "conversation_id": "c", "is_from_me": False, "sender": "Pat",
+         "timestamp": "2024-03-05T21:41:12.500000Z", "text": "you coming tonight?"},
+        {"source": "slack", "conversation_id": "c", "is_from_me": True, "sender": "me",
+         "timestamp": "2024-03-05T21:41:13Z", "text": "omw"},
+    ]
+    src.write_text("".join(json.dumps(r) + "\n" for r in recs_in), encoding="utf-8")
+    rows, _ = run("scripts/format/build_dataset.py", src, "--format", "openai-chat")
+    assert rows, "no examples built"
+    user_turn = rows[0]["messages"][-2]
+    assert user_turn["role"] == "user"
+    assert user_turn["content"] == "hey\nyou coming tonight?"   # chronological order
+
+
 # ── regression: WhatsApp must NOT drop real messages containing system words ──
 
 def test_whatsapp_keeps_messages_with_systemish_words(tmp_path):
