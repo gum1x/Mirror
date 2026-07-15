@@ -143,6 +143,40 @@ def test_gmail_empty_plain_falls_back_to_html(tmp_path):
     assert "hello from the html side" in recs[0]["text"]
 
 
+# ── persona/eval: style metrics must be ONE definition, not two copies ───────
+
+def test_style_metrics_shared_between_analyze_and_eval():
+    sys.path.insert(0, str(REPO / "scripts"))
+    sys.path.insert(0, str(REPO / "scripts" / "persona"))
+    sys.path.insert(0, str(REPO / "scripts" / "eval"))
+    import style_analyze
+    import style_eval
+    from lib import style_metrics as sm
+    # both sides must use the same objects — a drifted copy silently degrades scores
+    assert style_analyze.EMOJI is sm.EMOJI
+    assert style_eval.WORD is sm.WORD
+    assert style_eval.style_metrics is sm
+    texts = ["hey lol 😅", "OK.", "all lowercase no punct"]
+    fp = style_eval.fingerprint(texts)
+    stats = style_analyze.analyze(texts, "Sam")
+    assert stats["style"]["all_lowercase_ratio"] == round(fp["all_lowercase_ratio"], 3)
+    assert stats["style"]["emoji_per_msg"] == round(fp["emoji_per_msg"], 3)
+    assert (stats["style"]["no_end_punctuation_ratio"]
+            == round(fp["no_end_punctuation_ratio"], 3))
+    assert stats["length"]["chars_mean"] == round(fp["chars_mean"], 1)
+
+
+def test_serving_arg_validation_shared_by_chat_and_server():
+    # the same validation must fire from both entry points (server used to
+    # duplicate it, and had already drifted on the style-card warning)
+    p = subprocess.run([PY, str(REPO / "scripts/serve/mirror_server.py"), "--path", "B"],
+                       capture_output=True, text=True)
+    assert p.returncode != 0 and "--model" in p.stderr
+    p = subprocess.run([PY, str(REPO / "scripts/serve/mirror_chat.py"), "--path", "C"],
+                       capture_output=True, text=True)
+    assert p.returncode != 0 and "--base" in p.stderr
+
+
 # ── serving: keyword retriever ranking (direct import; stdlib-only path) ─────
 
 def test_keyword_retriever_ranking():

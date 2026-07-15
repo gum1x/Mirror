@@ -13,28 +13,26 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import statistics
 import sys
 
-EMOJI = re.compile(
-    "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F0FF"
-    "\U00002B00-\U00002BFF\U0001F1E6-\U0001F1FF\U00002190-\U000021FF\U0000FE0F]")
-WORD = re.compile(r"[a-zA-Z']+")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from lib import style_metrics  # noqa: E402
+from lib.style_metrics import WORD  # noqa: E402  (shared with style_analyze)
 
 
 def fingerprint(texts: list[str]) -> dict:
+    """Measure predictions with the SAME definitions style_analyze used on the
+    user's real messages (lib.style_metrics) — that's what makes the comparison
+    in style_match meaningful."""
     texts = [t for t in texts if t and t.strip()]
-    if not texts:
-        return {"chars_mean": 0, "all_lowercase_ratio": 0, "emoji_per_msg": 0,
-                "no_end_punctuation_ratio": 0}
-    n = len(texts)
     return {
-        "chars_mean": statistics.mean(len(t) for t in texts),
-        "all_lowercase_ratio": sum(1 for t in texts if t == t.lower()
-                                   and any(c.isalpha() for c in t)) / n,
-        "emoji_per_msg": sum(len(EMOJI.findall(t)) for t in texts) / n,
-        "no_end_punctuation_ratio": sum(1 for t in texts if t.rstrip()[-1:] not in ".?!") / n,
+        "chars_mean": style_metrics.chars_mean(texts),
+        "all_lowercase_ratio": style_metrics.all_lowercase_ratio(texts),
+        "emoji_per_msg": style_metrics.emoji_per_msg(texts),
+        "no_end_punctuation_ratio": style_metrics.no_end_punctuation_ratio(texts),
     }
 
 

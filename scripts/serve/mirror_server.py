@@ -37,20 +37,6 @@ import mirror_chat  # noqa: E402  (same dir; reuse its Mirror/Retriever/loaders)
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
-def build_mirror(args) -> mirror_chat.Mirror:
-    style_card = ""
-    if os.path.exists(args.style_card):
-        style_card = open(args.style_card, encoding="utf-8").read().strip()
-    retriever = None
-    if args.rag:
-        if not args.corpus:
-            sys.exit("--rag needs --corpus path/to/messages.jsonl")
-        texts = mirror_chat.load_corpus(args.corpus)
-        print(f"RAG index: {len(texts)} of your messages.", file=sys.stderr)
-        retriever = mirror_chat.Retriever(texts, args.semantic)
-    return mirror_chat.Mirror(args, style_card, retriever)
-
-
 def make_app(mirror):
     try:
         from fastapi import Depends, FastAPI, Header, HTTPException
@@ -111,24 +97,14 @@ def make_app(mirror):
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Serve the Mirror over HTTP.")
-    ap.add_argument("--path", choices=["A", "B", "C"], required=True)
-    ap.add_argument("--model", help="Path A Claude model / Path B ft: id.")
-    ap.add_argument("--base", help="Path C base model.")
-    ap.add_argument("--adapter", help="Path C LoRA adapter dir.")
-    ap.add_argument("--style-card", default="persona/style_card.md")
-    ap.add_argument("--corpus", help="Unified JSONL for RAG.")
-    ap.add_argument("--rag", action="store_true")
-    ap.add_argument("--semantic", action="store_true")
-    ap.add_argument("--k", type=int, default=6)
-    ap.add_argument("--max-tokens", type=int, default=512)
+    # Same flags, validation, and bootstrap as the CLI — defined once in
+    # mirror_chat so the two entry points can't drift apart.
+    mirror_chat.add_serving_args(ap)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
     args = ap.parse_args()
 
-    if args.path == "B" and not args.model:
-        ap.error("--path B needs --model ft:...")
-    if args.path == "C" and not args.base:
-        ap.error("--path C needs --base (and usually --adapter)")
+    mirror_chat.validate_serving_args(ap, args)
     if args.host not in LOOPBACK_HOSTS and not os.environ.get("MIRROR_TOKEN"):
         ap.error(f"--host {args.host} exposes your message corpus beyond this machine. "
                  "Set MIRROR_TOKEN first; clients must then send "
@@ -138,7 +114,7 @@ def main() -> None:
               "this Mirror (and, with --rag, retrieve your real messages).",
               file=sys.stderr)
 
-    mirror = build_mirror(args)
+    mirror = mirror_chat.build_mirror(args)
     app = make_app(mirror)
 
     try:
