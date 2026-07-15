@@ -143,6 +143,22 @@ def test_gmail_empty_plain_falls_back_to_html(tmp_path):
     assert "hello from the html side" in recs[0]["text"]
 
 
+# ── serving: keyword retriever ranking (direct import; stdlib-only path) ─────
+
+def test_keyword_retriever_ranking():
+    sys.path.insert(0, str(REPO / "scripts"))
+    sys.path.insert(0, str(REPO / "scripts" / "serve"))
+    import mirror_chat
+    texts = ["the quick brown fox", "quick fox jumps", "lazy dog sleeps", "fox"]
+    r = mirror_chat.Retriever(texts, semantic=False)
+    # overlap 2 for the first two (tie broken by corpus order), 1 for "fox"
+    assert r.top_k("quick fox", 2) == ["the quick brown fox", "quick fox jumps"]
+    assert r.top_k("quick fox", 10) == ["the quick brown fox", "quick fox jumps", "fox"]
+    # zero-overlap messages are never returned
+    assert r.top_k("zebra party", 3) == []
+    assert r.top_k("", 3) == []
+
+
 # ── regression: Telegram single-chat export gets a real conversation id ──────
 
 def test_telegram_single_chat_convo_id(tmp_path):

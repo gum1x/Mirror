@@ -13,11 +13,13 @@ words/views. Keyword retrieval needs nothing; --semantic needs sentence-transfor
 from __future__ import annotations
 
 import argparse
+import heapq
 import json
 import os
 import re
 import sys
 import threading
+from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.schema import read_jsonl  # noqa: E402
@@ -32,7 +34,13 @@ class Retriever:
         self.texts = texts
         self.semantic = semantic and self._init_semantic()
         if not self.semantic:
-            self.tokens = [set(WORD.findall(t.lower())) for t in texts]
+            # Inverted index (token -> message ids): a query then touches only
+            # messages sharing one of its tokens, instead of scanning and
+            # sorting the entire corpus on every request.
+            self.index: dict[str, list[int]] = defaultdict(list)
+            for i, t in enumerate(texts):
+                for tok in set(WORD.findall(t.lower())):
+                    self.index[tok].append(i)
 
     def _init_semantic(self) -> bool:
         try:
@@ -54,12 +62,20 @@ class Retriever:
         if self.semantic:
             q = self.model.encode([query], normalize_embeddings=True)[0]
             scores = self.emb @ q
-            idx = self.np.argsort(-scores)[:k]
+            if k < len(scores):
+                # partial selection, then order just the k winners by score
+                idx = self.np.argpartition(-scores, k)[:k]
+                idx = idx[self.np.argsort(-scores[idx])]
+            else:
+                idx = self.np.argsort(-scores)
             return [self.texts[i] for i in idx]
-        q = set(WORD.findall(query.lower()))
-        scored = sorted(range(len(self.texts)),
-                        key=lambda i: len(q & self.tokens[i]), reverse=True)
-        return [self.texts[i] for i in scored[:k] if q & self.tokens[i]]
+        overlap: Counter = Counter()
+        for tok in set(WORD.findall(query.lower())):
+            for i in self.index.get(tok, ()):
+                overlap[i] += 1
+        # highest overlap first; ties keep corpus order (same as the old sort)
+        top = heapq.nlargest(k, overlap.items(), key=lambda kv: (kv[1], -kv[0]))
+        return [self.texts[i] for i, _ in top]
 
 
 def load_corpus(path: str) -> list[str]:
@@ -93,6 +109,10 @@ class Mirror:
         # (two first requests would load the multi-GB model twice) and
         # generation (HF models aren't thread-safe).
         self._local_lock = threading.Lock()
+        # API clients are cached so served requests reuse the HTTP connection
+        # pool instead of paying a fresh TCP+TLS handshake per request.
+        self._anthropic = None
+        self._openai = None
 
     def _snippets(self, turns: list[dict]) -> list[str]:
         query = next((m["content"] for m in reversed(turns) if m["role"] == "user"), "")
@@ -108,8 +128,10 @@ class Mirror:
         return self._local_gen(system, turns)
 
     def _claude(self, snippets: list[str], turns: list[dict]) -> str:
-        import anthropic
-        client = anthropic.Anthropic()
+        if self._anthropic is None:
+            import anthropic
+            self._anthropic = anthropic.Anthropic()
+        client = self._anthropic
         # Cache the stable style card (prefix); keep volatile RAG snippets after the
         # breakpoint so the cache survives across turns. Stream to stay timeout-safe.
         system_blocks = [{"type": "text", "text": self.style_card or DEFAULT_SYSTEM,
@@ -129,9 +151,10 @@ class Mirror:
                        if getattr(b, "type", "") == "text").strip()
 
     def _openai(self, system: str, turns: list[dict]) -> str:
-        from openai import OpenAI
-        client = OpenAI()
-        resp = client.chat.completions.create(
+        if self._openai is None:
+            from openai import OpenAI
+            self._openai = OpenAI()
+        resp = self._openai.chat.completions.create(
             model=self.args.model, max_tokens=self.args.max_tokens,
             messages=[{"role": "system", "content": system}, *turns])
         return resp.choices[0].message.content.strip()
