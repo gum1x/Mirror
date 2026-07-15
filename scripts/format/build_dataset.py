@@ -60,9 +60,17 @@ def group_and_order(records: Iterator[MessageRecord]
         stats["sources"][r.source] += 1
         stats["no_ts"] += int(r.timestamp is None)
     for key, msgs in groups.items():
-        keyed, last = [], ""
+        # Sort on parsed datetimes, not the raw strings: "…12.500000Z" sorts
+        # before "…12Z" as text ('.' < 'Z'), and non-Z offsets sort arbitrarily.
+        # Messages without a (parseable) timestamp inherit the last known one;
+        # the index tiebreaker keeps input order within equal times.
+        keyed, last = [], dt.datetime.min.replace(tzinfo=dt.timezone.utc)
         for i, m in enumerate(msgs):
-            last = m.timestamp or last
+            t = _parse_ts(m.timestamp)
+            if t is not None:
+                if t.tzinfo is None:
+                    t = t.replace(tzinfo=dt.timezone.utc)
+                last = t
             keyed.append(((last, i), m))
         keyed.sort(key=lambda x: x[0])
         groups[key] = [m for _, m in keyed]
