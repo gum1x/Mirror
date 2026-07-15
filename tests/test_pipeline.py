@@ -94,6 +94,21 @@ def test_pii_scrub_coverage_and_precision(tmp_path):
     assert "1234567" in t                              # no separators ⇒ not a phone
 
 
+def test_pii_scrub_custom_terms_are_literal_and_metachars_warn(tmp_path):
+    src = tmp_path / "in.jsonl"
+    rec = {"source": "whatsapp", "conversation_id": "x", "is_from_me": True, "sender": "me",
+           "text": "Sam went home. sam rivera stayed."}
+    src.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    # a regex passed as --custom is escaped to a literal: it matches nothing,
+    # and the user must be told instead of silently uploading unredacted PII
+    recs, err = run("scripts/format/pii_scrub.py", src, "--custom", "Sam( Rivera)?")
+    assert "Sam went home" in recs[0]["text"]        # nothing matched the literal
+    assert "literal" in err.lower(), "no warning that regex syntax isn't supported"
+    # plain literals still redact case-insensitively
+    recs, _ = run("scripts/format/pii_scrub.py", src, "--custom", "Sam Rivera")
+    assert "sam rivera" not in recs[0]["text"] and "<REDACTED>" in recs[0]["text"]
+
+
 # ── regression: Gmail mboxrd un-escaping ─────────────────────────────────────
 
 def test_gmail_mboxrd_unescape(tmp_path):
