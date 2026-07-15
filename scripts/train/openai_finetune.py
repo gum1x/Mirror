@@ -12,7 +12,9 @@ Validation runs with no API key. Training/DPO-build need OPENAI_API_KEY.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
+import os
 import sys
 import time
 from collections import Counter
@@ -74,20 +76,58 @@ def get_client():
     return OpenAI()
 
 
+def _with_retries(fn, what: str, tries: int = 5):
+    """Run fn() with exponential backoff; each completion here costs money, so
+    a transient 429/5xx at row 900/1000 must not throw away 900 paid calls."""
+    for attempt in range(tries):
+        try:
+            return fn()
+        except Exception as e:
+            if attempt == tries - 1:
+                raise
+            wait = 2 * 2 ** attempt
+            print(f"  {what}: {e} — retrying in {wait}s", file=sys.stderr)
+            time.sleep(wait)
+
+
 def build_dpo(rows: list[dict], base: str, out: str) -> None:
-    """Fill non_preferred_output by sampling the base model on each prompt."""
+    """Fill non_preferred_output by sampling the base model on each prompt.
+
+    Appends to `out` and resumes after the rows already written (one output
+    line per input row, always), so a crash at row N doesn't re-buy N
+    completions on the rerun.
+    """
     client = get_client()
-    with open(out, "w", encoding="utf-8") as fh:
-        for i, row in enumerate(rows):
-            prompt_msgs = row["input"]["messages"]
-            resp = client.chat.completions.create(
-                model=base, messages=prompt_msgs, temperature=1.0, max_tokens=300)
+    done = 0
+    if os.path.exists(out):
+        with open(out, encoding="utf-8") as fh:
+            done = sum(1 for line in fh if line.strip())
+        if done:
+            print(f"  resuming: {done}/{len(rows)} rows already in {out}", file=sys.stderr)
+    unfilled = 0
+    with open(out, "a", encoding="utf-8") as fh:
+        for i, row in enumerate(rows[done:], start=done):
+            resp = _with_retries(
+                functools.partial(client.chat.completions.create, model=base,
+                                  messages=row["input"]["messages"],
+                                  temperature=1.0, max_tokens=300),
+                f"row {i}")
             rejected = resp.choices[0].message.content
-            row["non_preferred_output"] = [{"role": "assistant", "content": rejected}]
+            if rejected:
+                row["non_preferred_output"] = [{"role": "assistant", "content": rejected}]
+            else:
+                # content filter etc. can return None; keep the row (and the
+                # 1:1 line alignment resume depends on) but leave it unfilled
+                unfilled += 1
+                print(f"  row {i}: empty completion — left unfilled", file=sys.stderr)
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+            fh.flush()
             if (i + 1) % 25 == 0:
                 print(f"  built {i + 1}/{len(rows)} DPO triples", file=sys.stderr)
     print(f"Wrote DPO dataset → {out}", file=sys.stderr)
+    if unfilled:
+        print(f"  ⚠️  {unfilled} row(s) have an empty non_preferred_output; validation "
+              "will flag them — remove those lines before training.", file=sys.stderr)
 
 
 def run_job(path: str, base: str, method: str, suffix: str, epochs) -> None:
@@ -102,11 +142,22 @@ def run_job(path: str, base: str, method: str, suffix: str, epochs) -> None:
                   {"type": "dpo", "dpo": {"hyperparameters": hp}})
     job = client.fine_tuning.jobs.create(
         training_file=up.id, model=base, suffix=suffix, method=method_obj)
-    print(f"Created job {job.id} ({method} on {base}). Polling …", file=sys.stderr)
+    job_id = job.id
+    print(f"Created job {job_id} ({method} on {base}). Polling …", file=sys.stderr)
+    print(f"  (Ctrl-C is safe: the job keeps running remotely. Check on it later with\n"
+          f"   client.fine_tuning.jobs.retrieve('{job_id}'))", file=sys.stderr)
 
     last = None
     while True:
-        job = client.fine_tuning.jobs.retrieve(job.id)
+        try:
+            job = client.fine_tuning.jobs.retrieve(job_id)
+        except Exception as e:
+            # A transient network error must not kill the watcher after the
+            # upload and job creation already succeeded.
+            print(f"  poll failed ({e}); retrying in 60s — job {job_id} is still "
+                  "running remotely", file=sys.stderr)
+            time.sleep(60)
+            continue
         if job.status != last:
             print(f"  status: {job.status}", file=sys.stderr)
             last = job.status
