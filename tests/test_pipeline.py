@@ -143,6 +143,28 @@ def test_gmail_empty_plain_falls_back_to_html(tmp_path):
     assert "hello from the html side" in recs[0]["text"]
 
 
+# ── regression: Gmail bottom-posted/inline replies must survive quote strip ──
+
+def test_gmail_keeps_bottom_posted_reply(tmp_path):
+    mbox = tmp_path / "Sent.mbox"
+    mbox.write_text(
+        "From sam@example.com Tue Mar 05 21:41:12 2024\n"
+        "From: Sam <sam@example.com>\n"
+        "To: Alex <alex@example.com>\n"
+        "Subject: re: tonight\n"
+        "Date: Tue, 5 Mar 2024 21:41:12 +0000\n"
+        "\n"
+        "> hey are you coming tonight?\n"
+        "\n"
+        "yes! omw at 8\n",
+        encoding="utf-8")
+    recs, _ = run("scripts/connectors/gmail_mbox_parse.py", mbox, "--me", "sam@example.com")
+    assert recs, "bottom-posted reply was dropped entirely"
+    body = recs[0]["text"]
+    assert "yes! omw at 8" in body                     # the composed reply survives
+    assert "hey are you coming tonight?" not in body   # the quoted line doesn't
+
+
 # ── regression: Telegram single-chat export gets a real conversation id ──────
 
 def test_telegram_single_chat_convo_id(tmp_path):
