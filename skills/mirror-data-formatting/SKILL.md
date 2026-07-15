@@ -33,7 +33,7 @@ python scripts/format/pii_scrub.py data/clean.jsonl \
 ```
 
 Redacts emails, phone numbers, credit cards, SSNs, IPs, and any `--custom`
-literals/regexes → `<EMAIL>`, `<PHONE>`, etc. **Always run this before Path B
+terms (literal strings, case-insensitive — not regexes) → `<EMAIL>`, `<PHONE>`, etc. **Always run this before Path B
 (upload to OpenAI).** For Path C (local) it's optional but encouraged. For Path A,
 scrub anything you wouldn't want in retrieval results.
 

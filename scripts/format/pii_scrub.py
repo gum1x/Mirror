@@ -50,6 +50,13 @@ BUILTINS = [
 
 
 def build_scrubber(custom: list[str]) -> tuple[re.Pattern, dict[str, str]]:
+    for t in custom:
+        # Custom terms are matched literally (re.escape below). A term written
+        # as a regex would silently match nothing — the opposite of what a
+        # privacy scrub must do — so say it out loud.
+        if any(c in t for c in r"\^$|?*+()[]{}"):
+            print(f"⚠️  --custom terms are matched as literal text, not regex: "
+                  f"{t!r} will only match those exact characters.", file=sys.stderr)
     specs = [("<REDACTED>", re.escape(t)) for t in custom] + BUILTINS
     tags, parts = {}, []
     for i, (tag, rx) in enumerate(specs):

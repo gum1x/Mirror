@@ -46,7 +46,7 @@ data:
   min_chars: 1            # drop messages shorter than this (after trim)
   drop_media_only: true   # drop "<Media omitted>" / attachment-only messages
   redact_pii: true        # run pii_scrub before any upload
-  custom_redactions: []   # extra literal strings/regexes to scrub
+  custom_redactions: []   # extra literal strings to scrub (case-insensitive; not regexes)
   context_turns: 6        # how many prior turns to include per training example
 
 # Training (model-selection writes the chosen path here).
