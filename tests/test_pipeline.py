@@ -155,6 +155,44 @@ def test_telegram_single_chat_convo_id(tmp_path):
     assert recs and recs[0]["conversation_id"] == "ChatWithJordan"   # not "telegram"
 
 
+# ── regression: purge must reject unknown targets, not glob-delete them ──────
+
+def test_purge_rejects_unknown_what(tmp_path):
+    (tmp_path / "precious.txt").write_text("keep me", encoding="utf-8")
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "x.jsonl").write_text("{}\n", encoding="utf-8")
+    p = subprocess.run([PY, str(REPO / "scripts/maintenance/purge.py"),
+                        "--dir", str(tmp_path), "--what", "*", "--yes"],
+                       capture_output=True, text=True)
+    assert p.returncode != 0, "unknown --what value must be rejected"
+    assert "unknown" in p.stderr.lower()
+    assert (tmp_path / "precious.txt").exists()      # nothing deleted
+    assert (tmp_path / "data" / "x.jsonl").exists()
+
+
+def test_purge_dry_run_default_and_targeted_delete(tmp_path):
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "x.jsonl").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "persona").mkdir()
+    (tmp_path / "persona" / "style_card.md").write_text("card", encoding="utf-8")
+    (tmp_path / "precious.txt").write_text("keep me", encoding="utf-8")
+    purge = str(REPO / "scripts/maintenance/purge.py")
+    # dry run by default: reports, deletes nothing
+    p = subprocess.run([PY, purge, "--dir", str(tmp_path)],
+                       capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    assert "Would remove" in p.stderr
+    assert (tmp_path / "data" / "x.jsonl").exists()
+    assert (tmp_path / "persona" / "style_card.md").exists()
+    # targeted --yes: removes data/ only, leaves everything else
+    p = subprocess.run([PY, purge, "--dir", str(tmp_path), "--what", "data", "--yes"],
+                       capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    assert not (tmp_path / "data").exists()
+    assert (tmp_path / "persona" / "style_card.md").exists()
+    assert (tmp_path / "precious.txt").exists()
+
+
 if __name__ == "__main__":
     # Lightweight runner so the suite works without pytest installed.
     import traceback
