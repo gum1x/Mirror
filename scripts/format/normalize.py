@@ -38,11 +38,11 @@ def clean_text(text: str, drop_urls: bool) -> str:
 
 
 def normalize(inputs: list[str], min_chars: int, drop_urls: bool, dedup: bool,
-              dedup_global: bool) -> Iterator[MessageRecord]:
+              dedup_global: bool, skip_bad: bool = False) -> Iterator[MessageRecord]:
     last_key = None
     seen_global: set = set()
     for path in inputs:
-        for rec in read_jsonl(path):
+        for rec in read_jsonl(path, skip_bad=skip_bad):
             rec.text = clean_text(rec.text or "", drop_urls)
             if len(rec.text) < min_chars or MEDIA_ONLY.match(rec.text):
                 continue
@@ -68,10 +68,13 @@ def main() -> None:
     ap.add_argument("--dedup-global", action="store_true",
                     help="Drop ALL repeats of the same normalized text corpus-wide "
                          "(removes forwarded/copy-paste spam; also flattens repeated one-liners).")
+    ap.add_argument("--skip-bad-lines", action="store_true",
+                    help="Warn and skip malformed JSONL lines instead of aborting "
+                         "(real exports often have a truncated last line).")
     ap.add_argument("-o", "--output", default="-", help="Output .jsonl (default stdout).")
     args = ap.parse_args()
     n = write_jsonl(normalize(args.inputs, args.min_chars, args.drop_urls, args.dedup,
-                              args.dedup_global), args.output)
+                              args.dedup_global, args.skip_bad_lines), args.output)
     print(f"Wrote {n} cleaned messages → {args.output}", file=sys.stderr)
 
 

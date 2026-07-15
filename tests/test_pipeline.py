@@ -24,6 +24,43 @@ def run(script, *args):
     return recs, p.stderr
 
 
+# ── regression: malformed corpus lines → clear errors, skippable, non-fatal ──
+
+def test_missing_required_field_fails_with_line_number_not_traceback(tmp_path):
+    src = tmp_path / "in.jsonl"
+    good = {"source": "sms", "conversation_id": "c", "is_from_me": True,
+            "sender": "me", "text": "hi there"}
+    src.write_text(json.dumps(good) + "\n" + '{"text": "no required fields"}\n',
+                   encoding="utf-8")
+    p = subprocess.run([PY, str(REPO / "scripts/format/normalize.py"), str(src), "-o", "-"],
+                       capture_output=True, text=True)
+    assert p.returncode != 0
+    assert "line 2" in p.stderr                 # clear, located message
+    assert "Traceback" not in p.stderr          # not a raw TypeError
+
+
+def test_skip_bad_lines_and_status_survives_bad_corpus(tmp_path):
+    (tmp_path / "data").mkdir()
+    src = tmp_path / "data" / "scrubbed.jsonl"
+    good = {"source": "sms", "conversation_id": "c", "is_from_me": True,
+            "sender": "me", "text": "hi there"}
+    good2 = dict(good, text="still here")
+    src.write_text(json.dumps(good) + "\n{truncated garbage\n" + json.dumps(good2) + "\n",
+                   encoding="utf-8")
+    # --skip-bad-lines: warn, keep the good records, exit 0
+    p = subprocess.run([PY, str(REPO / "scripts/format/normalize.py"), str(src),
+                        "--skip-bad-lines", "-o", "-"],
+                       capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    recs = [json.loads(ln) for ln in p.stdout.splitlines() if ln.strip()]
+    assert [r["text"] for r in recs] == ["hi there", "still here"]
+    assert "skipped" in p.stderr.lower()
+    # status.py is read-only reporting: one bad line must not kill it
+    p = subprocess.run([PY, str(REPO / "scripts/status.py"), "--dir", str(tmp_path)],
+                       capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+
+
 # ── core pipeline ────────────────────────────────────────────────────────────
 
 def test_schema_validate_sample():

@@ -29,7 +29,9 @@ def _exists_any(*patterns: str) -> list[str]:
 def _counts(path: str) -> dict:
     try:
         return validate(read_jsonl(path))
-    except Exception:
+    except (Exception, SystemExit):
+        # read_jsonl raises SystemExit (not an Exception) on a bad line; a
+        # read-only status report should degrade, not die on a corrupt corpus.
         return {}
 
 

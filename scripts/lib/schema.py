@@ -41,6 +41,10 @@ KNOWN_SOURCES = {
 }
 
 
+class SchemaError(ValueError):
+    """A JSONL line that is valid JSON but not a valid MessageRecord."""
+
+
 @dataclass
 class MessageRecord:
     """One message in one conversation."""
@@ -70,6 +74,18 @@ class MessageRecord:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> MessageRecord:
+        if not isinstance(d, dict):
+            raise SchemaError(f"expected a JSON object, got {type(d).__name__}")
+        missing = [k for k in ("source", "conversation_id", "text", "is_from_me")
+                   if k not in d]
+        if missing:
+            raise SchemaError(f"missing required field(s): {', '.join(missing)}")
+        if not isinstance(d["is_from_me"], bool):
+            # the load-bearing training field — a truthy string like "no" would
+            # silently train someone else's messages as YOUR voice
+            raise SchemaError(f"is_from_me must be true/false, got {d['is_from_me']!r}")
+        if not isinstance(d["text"], str):
+            raise SchemaError(f"text must be a string, got {type(d['text']).__name__}")
         known = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
         extra = {k: v for k, v in d.items() if k not in known}
         base = {k: v for k, v in d.items() if k in known}
@@ -116,12 +132,13 @@ def write_jsonl(records: Iterable[MessageRecord], path: str) -> int:
     return n
 
 
-def read_jsonl(path: str) -> Iterator[MessageRecord]:
+def read_jsonl(path: str, skip_bad: bool = False) -> Iterator[MessageRecord]:
     """Stream MessageRecords from a .jsonl file (or '-' for stdin).
 
     Fails with a clear, one-line message (not a raw traceback, and not a silent
-    exit 0) when the file is missing or a line isn't valid JSON, since the people
-    running this are usually feeding in their own messy exports.
+    exit 0) when the file is missing or a line isn't a valid record, since the
+    people running this are usually feeding in their own messy exports. With
+    skip_bad=True, bad lines are warned about and skipped instead.
     """
     if path == "-":
         fh = sys.stdin
@@ -132,6 +149,7 @@ def read_jsonl(path: str) -> Iterator[MessageRecord]:
             sys.exit(f"Input file not found: {path}")
         except OSError as e:
             sys.exit(f"Could not open {path}: {e}")
+    skipped = 0
     try:
         for i, line in enumerate(fh, 1):
             line = line.strip()
@@ -140,9 +158,25 @@ def read_jsonl(path: str) -> Iterator[MessageRecord]:
             try:
                 obj = json.loads(line)
             except json.JSONDecodeError as e:
-                sys.exit(f"{path} line {i}: not valid JSON ({e.msg}). "
-                         "Expected one JSON object per line (unified schema).")
-            yield MessageRecord.from_dict(obj)
+                problem = (f"not valid JSON ({e.msg}). "
+                           "Expected one JSON object per line (unified schema).")
+            else:
+                try:
+                    rec = MessageRecord.from_dict(obj)
+                except SchemaError as e:
+                    problem = str(e)
+                except TypeError as e:  # unexpected shapes (e.g. extra not a dict)
+                    problem = f"not a valid record ({e})"
+                else:
+                    yield rec
+                    continue
+            if skip_bad:
+                skipped += 1
+                print(f"⚠️  {path} line {i}: {problem} — skipped", file=sys.stderr)
+                continue
+            sys.exit(f"{path} line {i}: {problem}")
+        if skipped:
+            print(f"⚠️  {path}: skipped {skipped} bad line(s)", file=sys.stderr)
     finally:
         if fh is not sys.stdin:
             fh.close()
