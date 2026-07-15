@@ -201,15 +201,17 @@ def validate(records: Iterable[MessageRecord]) -> dict[str, Any]:
         "mine_ratio": round(mine / total, 3) if total else 0.0,
         "conversations": len(convos),
         "sources": sorted(sources),
+        "unknown_sources": sorted(sources - KNOWN_SOURCES),  # typo'd connector ids
         "empty_text": empty,
         "missing_timestamp": no_ts,
     }
 
 
 if __name__ == "__main__":
-    # `python schema.py path.jsonl` prints a validation report.
-    src = sys.argv[1] if len(sys.argv) > 1 else "-"
-    report = validate(read_jsonl(src))
+    # `python schema.py a.jsonl b.jsonl …` prints ONE combined validation
+    # report across every file given (the docs show a data/raw/*.jsonl glob).
+    srcs = sys.argv[1:] or ["-"]
+    report = validate(rec for s in srcs for rec in read_jsonl(s))
     print(json.dumps(report, indent=2))
     if report["total_messages"] and report["from_me"] == 0:
         print("\n⚠️  No messages flagged is_from_me=true — the model would have "

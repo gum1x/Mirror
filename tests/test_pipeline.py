@@ -89,6 +89,24 @@ def test_write_jsonl_in_place_does_not_truncate_input(tmp_path):
     assert not (tmp_path / "clean.jsonl.tmp").exists()   # no staging file left behind
 
 
+def test_schema_validate_combines_multiple_files(tmp_path):
+    # the docs say `python scripts/lib/schema.py data/raw/*.jsonl` gives a
+    # COMBINED report — it silently validated only the first file before
+    rec = {"source": "sms", "conversation_id": "c", "is_from_me": True,
+           "sender": "me", "text": "one"}
+    (tmp_path / "a.jsonl").write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    (tmp_path / "b.jsonl").write_text(
+        json.dumps(dict(rec, text="two", source="myapp", is_from_me=False,
+                        sender="Pat")) + "\n", encoding="utf-8")
+    p = subprocess.run([PY, str(REPO / "scripts/lib/schema.py"),
+                        str(tmp_path / "a.jsonl"), str(tmp_path / "b.jsonl")],
+                       capture_output=True, text=True)
+    report = json.loads(p.stdout)
+    assert report["total_messages"] == 2
+    assert set(report["sources"]) == {"sms", "myapp"}
+    assert report["unknown_sources"] == ["myapp"]   # KNOWN_SOURCES finally used
+
+
 def test_build_dataset_targets_are_mine(tmp_path):
     out = tmp_path / "train.jsonl"
     p = subprocess.run([PY, str(REPO / "scripts/format/build_dataset.py"),
