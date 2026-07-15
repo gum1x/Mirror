@@ -128,6 +128,23 @@ def test_instagram_mojibake_and_media_drop(tmp_path):
     assert all(r["conversation_id"] == "Alex" for r in recs)
 
 
+def test_instagram_keeps_caption_on_media_message(tmp_path):
+    thread = tmp_path / "inbox" / "alex_123"
+    thread.mkdir(parents=True)
+    (thread / "message_1.json").write_text(json.dumps({
+        "participants": [{"name": "Sam"}, {"name": "Alex"}],
+        "title": "Alex",
+        "messages": [
+            {"sender_name": "Sam", "timestamp_ms": 1709675480000,
+             "photos": [{"uri": "x.jpg"}], "content": "look at this sunset!!"},
+            {"sender_name": "Sam", "timestamp_ms": 1709675490000,
+             "photos": [{"uri": "y.jpg"}]},   # no caption — still dropped
+        ],
+    }), encoding="utf-8")
+    recs, _ = run("scripts/connectors/instagram_parse.py", tmp_path / "inbox", "--me", "Sam")
+    assert [r["text"] for r in recs] == ["look at this sunset!!"]
+
+
 # ── iMessage generic JSON import ─────────────────────────────────────────────
 
 def test_imessage_json_uses_date_when_timestamp_missing(tmp_path):
