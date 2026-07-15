@@ -1,18 +1,18 @@
-# Mirror 
+# Mirror
 
-Self-hosted clone of your own writing voice. It pulls your real messages from the apps you already use (iMessage, WhatsApp, Telegram, Gmail, Slack, Discord, Instagram, SMS), normalizes them into one format, looks at how you actually write (length, punctuation, emoji, slang, the way you explain things), picks a training method that fits your data and privacy, trains it, and checks how close it sounds to you on conversations it never saw. The goal is something that texts in your cadence and answers the way you would, grounded in what you've actually said.
+Self-hosted clone of your own writing voice. Pulls your real messages from the apps you already use (iMessage, WhatsApp, Telegram, Gmail, Slack, Discord, Instagram, SMS), normalizes them into one format, figures out how you actually write (length, punctuation, emoji, slang, the way you explain things), picks a training method that fits your data and how much privacy you want, trains it, and checks how close it sounds to you on conversations it never saw. Goal is something that texts in your cadence and answers the way you would, grounded in what you've actually said, not a generic chatbot wearing your name.
 
 9 skills, 20 runnable scripts, no dependencies for the core pipeline.
 
-> Built with AI assistance (Anthropic's Claude). It has been reviewed and tested, but read the code before running it on your own data, and treat the privacy notes as guidance rather than a guarantee.
+> Built with AI assistance (Anthropic's Claude). I've reviewed and tested it, but read the code before running it on your own data, and treat the privacy notes as guidance, not a guarantee.
 
-## Why
+## Why I built this
 
-I kept running into the same recipe for this: take one chat export, fine-tune one small model on it, ship it. That gets you the surface stuff, your cadence, your filler words, how short your texts run. The problem is that a fine-tune doesn't really know anything. Ask it something it didn't see in training and it makes something up in your voice, which is worse than a wrong answer in a stranger's voice.
+Same recipe everywhere for this kind of project: grab one chat export, fine-tune a small model on it, ship it. That gets you the surface stuff fine, your cadence, your filler words, how short your texts run. The problem is a fine-tune doesn't actually know anything. Ask it something it didn't see in training and it'll make something up in your voice, which is worse than a wrong answer in a stranger's voice, because now it sounds like you said it.
 
-So Mirror tries to keep two things apart. Your voice goes into the model, either as fine-tuned weights or a style prompt. What you actually know and think stays in your real messages and gets pulled in by retrieval when it's relevant. It also doesn't assume everyone wants the same setup, so it asks a few questions first and suggests one of three paths: Claude with a style prompt plus retrieval if you want the strongest version with no GPU, an OpenAI fine-tune if you want your voice in a hosted model, or a local LoRA if you'd rather nothing leave your machine.
+So Mirror keeps two things apart. Your voice goes into the model, either as fine-tuned weights or a style prompt. What you actually know and think stays in your real messages and gets pulled in by retrieval when it's relevant. It also doesn't assume everyone wants the same setup, so it asks a few questions first and suggests one of three paths: Claude with a style prompt plus retrieval if you want the strongest version with no GPU, an OpenAI fine-tune if you want your voice baked into a hosted model, or a local LoRA if you'd rather nothing leave your machine.
 
-None of this is new. People have been cloning themselves from chat history for a while (there's a comparison further down), and Mirror borrows from them. It mostly just tries to be careful about the boring parts: use each app's own export instead of scraping, scrub PII locally before anything uploads, split a conversation on a time gap so a six-week silence doesn't land inside one training example, keep the test set away from training, and actually measure how close the output is to you instead of guessing. Whether that's worth the extra moving parts is your call.
+None of this is new, people have been cloning themselves from chat history for a while (comparison table further down), and Mirror borrows from them. What I mostly tried to get right is the boring stuff: use each app's own export instead of scraping it, scrub PII locally before anything uploads, split conversations on a time gap so a six-week silence doesn't land inside one training example, keep the eval set away from training, and actually measure how close the output is to you instead of eyeballing it. Whether that's worth the extra moving parts is your call.
 
 ## How it works
 
@@ -153,7 +153,7 @@ Cloning yourself from chat history is well-trodden ground, and Mirror leans on a
 
 Most of these build on [Unsloth](https://github.com/unslothai/unsloth), [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory), or [Axolotl](https://github.com/axolotl-ai-cloud/axolotl).
 
-Where Mirror is different: it reads from several apps into one schema instead of a single source, it picks a training method from your answers instead of defaulting to a 7B LoRA, and it reports a style-match score on a held-out set instead of relying on an eyeball check. The trade-off is more moving parts. If you only care about one source and one model, one of the projects above is probably the simpler choice.
+Where Mirror differs: it reads from several apps into one schema instead of a single source, it picks a training method from your answers instead of defaulting to a 7B LoRA, and it reports a style-match score on a held-out set instead of relying on an eyeball check. Trade-off is more moving parts. If you only care about one source and one model, one of the projects above is probably the simpler choice.
 
 Things it borrows from the field and the wider community: time-gap session windowing (like doppelganger and Izzy Miller), keeping train and eval separate, dataset cards for provenance, seeded splits, merging consecutive messages into one turn, and ShareGPT / OpenAI-chat / ChatML / DPO output formats. The reasoning behind the defaults is in `skills/mirror-model-selection/references`.
 
@@ -165,7 +165,7 @@ python tests/test_pipeline.py     # pipeline + regression suite
 python tests/test_connectors.py   # connector regression suite
 ```
 
-The suite runs the stdlib pipeline end to end on the bundled sample and pins the bugs found in review so they don't come back. CI runs it on every push.
+The suite runs the stdlib pipeline end to end on the bundled sample and pins bugs found in review so they don't come back. CI runs it on every push.
 
 ## License
 
