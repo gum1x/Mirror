@@ -17,6 +17,7 @@ import json
 import os
 import re
 import sys
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.schema import read_jsonl  # noqa: E402
@@ -88,6 +89,10 @@ class Mirror:
         self.style_card = style_card
         self.retriever = retriever
         self._local = None  # lazy (path C)
+        # mirror_server runs handlers on a threadpool: guard the lazy load
+        # (two first requests would load the multi-GB model twice) and
+        # generation (HF models aren't thread-safe).
+        self._local_lock = threading.Lock()
 
     def _snippets(self, turns: list[dict]) -> list[str]:
         query = next((m["content"] for m in reversed(turns) if m["role"] == "user"), "")
@@ -134,15 +139,18 @@ class Mirror:
     def _ensure_local(self):
         if self._local:
             return self._local
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-        tok = AutoTokenizer.from_pretrained(self.args.base)
-        model = AutoModelForCausalLM.from_pretrained(
-            self.args.base, device_map="auto", torch_dtype=torch.bfloat16)
-        if self.args.adapter:
-            from peft import PeftModel
-            model = PeftModel.from_pretrained(model, self.args.adapter)
-        self._local = (tok, model)
+        with self._local_lock:
+            if self._local:  # another thread finished loading while we waited
+                return self._local
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+            tok = AutoTokenizer.from_pretrained(self.args.base)
+            model = AutoModelForCausalLM.from_pretrained(
+                self.args.base, device_map="auto", torch_dtype=torch.bfloat16)
+            if self.args.adapter:
+                from peft import PeftModel
+                model = PeftModel.from_pretrained(model, self.args.adapter)
+            self._local = (tok, model)
         return self._local
 
     def _local_gen(self, system: str, turns: list[dict]) -> str:
@@ -151,7 +159,7 @@ class Mirror:
         msgs = [{"role": "system", "content": system}, *turns]
         ids = tok.apply_chat_template(msgs, add_generation_prompt=True, return_tensors="pt")
         ids = ids.to(model.device)
-        with torch.no_grad():
+        with self._local_lock, torch.no_grad():
             out = model.generate(ids, max_new_tokens=self.args.max_tokens,
                                  do_sample=True, temperature=0.8, top_p=0.9,
                                  pad_token_id=tok.eos_token_id)

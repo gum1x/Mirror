@@ -10,8 +10,14 @@ one so existing chat clients work unchanged.
     python scripts/serve/mirror_server.py --path A \
         --style-card persona/style_card.md --corpus data/scrubbed.jsonl --rag
 
-    curl localhost:8000/chat -d '{"messages":[{"role":"user","content":"yo"}]}'
+    curl localhost:8000/chat -H 'Content-Type: application/json' \
+        -d '{"messages":[{"role":"user","content":"yo"}]}'
     # or point any OpenAI client at http://localhost:8000/v1
+
+Auth: with --rag this server can quote your real messages to any caller, so
+set MIRROR_TOKEN to require 'Authorization: Bearer $MIRROR_TOKEN' on the chat
+endpoints. Binding a non-loopback --host REQUIRES it. On loopback, the Host
+header is also validated to block DNS-rebinding pages.
 
 Endpoints:
     POST /chat                    {"messages":[...]} -> {"reply": "..."}
@@ -27,6 +33,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mirror_chat  # noqa: E402  (same dir; reuse its Mirror/Retriever/loaders)
+
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 def build_mirror(args) -> mirror_chat.Mirror:
@@ -45,11 +53,24 @@ def build_mirror(args) -> mirror_chat.Mirror:
 
 def make_app(mirror):
     try:
-        from fastapi import FastAPI, HTTPException
+        from fastapi import Depends, FastAPI, Header, HTTPException
+        from fastapi.middleware.trustedhost import TrustedHostMiddleware
     except ImportError:
         sys.exit("Install the server deps:  pip install fastapi uvicorn")
 
     app = FastAPI(title="Mirror")
+    if mirror.args.host in LOOPBACK_HOSTS:
+        # Reject requests whose Host header isn't local: a malicious page can
+        # DNS-rebind its origin onto 127.0.0.1 and read responses; the rebound
+        # request still carries the attacker's hostname in Host.
+        app.add_middleware(TrustedHostMiddleware,
+                           allowed_hosts=["127.0.0.1", "localhost", "::1"])
+
+    token = os.environ.get("MIRROR_TOKEN", "")
+
+    def require_token(authorization: str = Header(default="")):
+        if token and authorization != f"Bearer {token}":
+            raise HTTPException(401, "send 'Authorization: Bearer $MIRROR_TOKEN'")
 
     def extract_turns(payload: dict) -> list[dict]:
         """Validate the request body into non-system turns, or raise a 400."""
@@ -59,7 +80,7 @@ def make_app(mirror):
         try:
             turns = [{"role": m["role"], "content": m["content"]}
                      for m in msgs if m.get("role") != "system"]
-        except (TypeError, KeyError):
+        except (TypeError, KeyError, AttributeError):  # e.g. a bare-string entry
             raise HTTPException(400, "each message needs 'role' and 'content'") from None
         if not turns:
             raise HTTPException(400, "'messages' must contain at least one non-system message")
@@ -69,11 +90,11 @@ def make_app(mirror):
     def healthz():
         return {"ok": True, "path": mirror.args.path}
 
-    @app.post("/chat")
+    @app.post("/chat", dependencies=[Depends(require_token)])
     def chat(payload: dict):
         return {"reply": mirror.reply(extract_turns(payload))}
 
-    @app.post("/v1/chat/completions")
+    @app.post("/v1/chat/completions", dependencies=[Depends(require_token)])
     def openai_compat(payload: dict):
         reply = mirror.reply(extract_turns(payload))
         return {
@@ -108,6 +129,14 @@ def main() -> None:
         ap.error("--path B needs --model ft:...")
     if args.path == "C" and not args.base:
         ap.error("--path C needs --base (and usually --adapter)")
+    if args.host not in LOOPBACK_HOSTS and not os.environ.get("MIRROR_TOKEN"):
+        ap.error(f"--host {args.host} exposes your message corpus beyond this machine. "
+                 "Set MIRROR_TOKEN first; clients must then send "
+                 "'Authorization: Bearer $MIRROR_TOKEN'.")
+    if not os.environ.get("MIRROR_TOKEN"):
+        print("NOTE: MIRROR_TOKEN not set — any process on this machine can query "
+              "this Mirror (and, with --rag, retrieve your real messages).",
+              file=sys.stderr)
 
     mirror = build_mirror(args)
     app = make_app(mirror)
