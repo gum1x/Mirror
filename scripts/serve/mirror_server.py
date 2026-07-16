@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import secrets
 import sys
 import time
 
@@ -55,7 +56,7 @@ def make_app(mirror):
     token = os.environ.get("MIRROR_TOKEN", "")
 
     def require_token(authorization: str = Header(default="")):
-        if token and authorization != f"Bearer {token}":
+        if token and not secrets.compare_digest(authorization, f"Bearer {token}"):
             raise HTTPException(401, "send 'Authorization: Bearer $MIRROR_TOKEN'")
 
     def extract_turns(payload: dict) -> list[dict]:
