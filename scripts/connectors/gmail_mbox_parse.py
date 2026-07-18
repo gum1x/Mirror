@@ -24,7 +24,10 @@ QUOTE_BOUNDARIES = [
     re.compile(r"^On .*wrote:\s*$"),
     re.compile(r"^-----Original Message-----\s*$"),
     re.compile(r"^_{5,}\s*$"),
-    re.compile(r"^From:\s.*$", re.I),          # Outlook quoted header block
+    # Outlook quoted header block. Require an address on the line so a prose
+    # sentence that merely opens with "From:" (e.g. "From: the numbers, ...")
+    # isn't treated as a cut point and truncated.
+    re.compile(r"^From:\s.*\S@\S", re.I),
     re.compile(r"^-- \s*$"),                    # standard signature delimiter
     re.compile(r"^Sent from my \w+", re.I),     # mobile signatures
 ]

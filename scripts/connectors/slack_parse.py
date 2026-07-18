@@ -80,7 +80,10 @@ def parse(export_dir: str, me_id: str | None, users: dict[str, str]) -> Iterator
             is_me = me_id is not None and uid == me_id
             ts = None
             if m.get("ts"):
-                ts = iso_utc(datetime.fromtimestamp(float(m["ts"]), tz=timezone.utc))
+                try:
+                    ts = iso_utc(datetime.fromtimestamp(float(m["ts"]), tz=timezone.utc))
+                except (ValueError, OSError, OverflowError):
+                    ts = None
             yield MessageRecord(
                 source="slack", conversation_id=channel, text=text, is_from_me=is_me,
                 sender="me" if is_me else users.get(uid, uid or "other"), timestamp=ts)

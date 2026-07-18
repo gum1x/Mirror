@@ -49,6 +49,26 @@ def test_slack_resolves_me_mentions_and_links(tmp_path):
     assert all("joined" != r["text"] for r in recs)   # subtype dropped
 
 
+def test_slack_tolerates_bad_timestamp(tmp_path):
+    # A single non-numeric `ts` must not crash the parser and discard every
+    # record (write_jsonl stages to .tmp and only swaps on success, so a crash
+    # loses the whole file). Every other connector guards this; Slack must too.
+    (tmp_path / "users.json").write_text(
+        '[{"id":"U1","profile":{"display_name":"Sam"}},'
+        '{"id":"U2","profile":{"display_name":"Alex"}}]', encoding="utf-8")
+    chan = tmp_path / "general"
+    chan.mkdir()
+    (chan / "2024-03-05.json").write_text(json.dumps([
+        {"type": "message", "user": "U2", "ts": "1709675400.0", "text": "before"},
+        {"type": "message", "user": "U1", "ts": "NaN-oops", "text": "bad ts but keep me"},
+        {"type": "message", "user": "U2", "ts": "1709675480.0", "text": "after"},
+    ]), encoding="utf-8")
+    recs, _ = run("scripts/connectors/slack_parse.py", tmp_path, "--me", "Sam")
+    assert [r["text"] for r in recs] == ["before", "bad ts but keep me", "after"]
+    bad = next(r for r in recs if r["text"] == "bad ts but keep me")
+    assert bad["timestamp"] is None and bad["is_from_me"] is True
+
+
 def test_slack_unknown_me_warns_and_flags_none(tmp_path):
     (tmp_path / "users.json").write_text('[{"id":"U1","profile":{"display_name":"Sam"}}]',
                                          encoding="utf-8")
@@ -143,6 +163,51 @@ def test_instagram_keeps_caption_on_media_message(tmp_path):
     }), encoding="utf-8")
     recs, _ = run("scripts/connectors/instagram_parse.py", tmp_path / "inbox", "--me", "Sam")
     assert [r["text"] for r in recs] == ["look at this sunset!!"]
+
+
+def test_instagram_keeps_prose_that_ends_like_a_system_line(tmp_path):
+    # The system-line filter must anchor on the whole line, not `endswith`:
+    # real prose can end "to your message" without being a reaction notice.
+    thread = tmp_path / "inbox" / "alex_123"
+    thread.mkdir(parents=True)
+    (thread / "message_1.json").write_text(json.dumps({
+        "participants": [{"name": "Sam"}, {"name": "Alex"}], "title": "Alex",
+        "messages": [
+            {"sender_name": "Sam", "timestamp_ms": 1709675400000,
+             "content": "i keep coming back to your message"},
+            {"sender_name": "Alex", "timestamp_ms": 1709675450000,
+             "content": "Alex reacted 😍 to your message"},   # real system line
+            {"sender_name": "Sam", "timestamp_ms": 1709675470000,
+             "content": "Sam sent an attachment."},           # real system line
+        ],
+    }), encoding="utf-8")
+    recs, _ = run("scripts/connectors/instagram_parse.py", tmp_path / "inbox", "--me", "Sam")
+    assert [r["text"] for r in recs] == ["i keep coming back to your message"]
+
+
+# ── Gmail Sent mbox ──────────────────────────────────────────────────────────
+
+def test_gmail_keeps_body_line_starting_from(tmp_path):
+    # The quote-stripper cuts at Outlook "From: Name <addr@x>" header blocks, but
+    # must NOT fire on a composed line that merely opens "From:" — that silently
+    # deletes the rest of the message (the training target).
+    mbox = tmp_path / "sent.mbox"
+    mbox.write_text(
+        "From sam@example.com Tue Mar 05 21:41:12 2024\n"
+        "From: Sam <sam@example.com>\n"
+        "To: Alex <alex@example.com>\n"
+        "Subject: plan\n"
+        "Date: Tue, 05 Mar 2024 21:41:12 +0000\n"
+        "\n"
+        "Heres my plan.\n"
+        "From: the numbers, we should ship it.\n"
+        "Lets go.\n"
+        "\n", encoding="utf-8")
+    recs, _ = run("scripts/connectors/gmail_mbox_parse.py", mbox)
+    assert len(recs) == 1
+    body = recs[0]["text"]
+    assert "From: the numbers, we should ship it." in body
+    assert body.strip().endswith("Lets go.")
 
 
 # ── --me must be repeatable everywhere (display names change over the years) ──

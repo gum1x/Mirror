@@ -12,12 +12,19 @@ import argparse
 import glob
 import json
 import os
+import re
 import sys
 from collections.abc import Iterator
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.schema import MessageRecord, iso_utc, write_jsonl  # noqa: E402
+
+# Meta's English system/placeholder lines. Anchored to the whole line so they
+# only drop the auto-generated notices, not real prose that happens to end the
+# same way (e.g. "i keep coming back to your message").
+SYSTEM_LINE = re.compile(
+    r"^.+ sent an attachment\.$|^.+ reacted .* to your message$")
 
 
 def _fix_mojibake(s: str) -> str:
@@ -40,7 +47,7 @@ def parse_thread(path: str, me: list[str], source: str) -> Iterator[MessageRecor
         # 'content' and is dropped here.
         content = _fix_mojibake(msg.get("content") or "").strip()
         # Drop Meta's system/placeholder lines.
-        if not content or content.endswith((" sent an attachment.", " to your message")):
+        if not content or SYSTEM_LINE.match(content):
             continue
         sender = _fix_mojibake(msg.get("sender_name", "")).strip()
         is_me = sender.lower() in me_lower
