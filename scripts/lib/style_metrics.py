@@ -11,9 +11,12 @@ from __future__ import annotations
 import re
 import statistics
 
+# U+FE0F (variation selector-16) is deliberately excluded: it's an invisible
+# modifier appended to many emoji, so counting it double-counts every VS16
+# emoji and makes the blank glyph the #1 "top emoji" written into the card.
 EMOJI = re.compile(
     "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F0FF"
-    "\U00002B00-\U00002BFF\U0001F1E6-\U0001F1FF\U00002190-\U000021FF\U0000FE0F]"
+    "\U00002B00-\U00002BFF\U0001F1E6-\U0001F1FF\U00002190-\U000021FF]"
 )
 WORD = re.compile(r"[a-zA-Z']+")
 

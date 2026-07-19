@@ -31,7 +31,9 @@ from lib.schema import MessageRecord, read_jsonl, write_jsonl  # noqa: E402
 # longer things first so they win at a given position (leftmost-longest-ish).
 BUILTINS = [
     ("<URL>", r"https?://\S+|www\.\S+"),
-    ("<EMAIL>", r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b"),
+    # Local part bounded to 64 (RFC 5321 max); the bound also caps catastrophic
+    # backtracking on long dotted no-@ tokens (stack traces, file paths).
+    ("<EMAIL>", r"\b[\w.+-]{1,64}@[\w-]+\.[\w.-]+\b"),
     ("<CARD>", r"\b\d(?:[ -]?\d){12,15}\b"),                       # ends on a digit
     ("<SSN>", r"\b\d{3}-\d{2}-\d{4}\b|(?<!\w)\d{9}(?!\w)"),          # dashed or bare 9 digits
     ("<IP>", r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
