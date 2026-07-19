@@ -50,9 +50,15 @@ def _parse_ts(ts: str | None) -> dt.datetime | None:
     if not ts:
         return None
     try:
-        return dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        parsed = dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
     except ValueError:
         return None
+    # Always return tz-aware UTC so callers can subtract two parsed timestamps
+    # without hitting "can't subtract offset-naive and offset-aware" when a
+    # corpus mixes "…Z" records with naive ones (e.g. hand-imported JSONL).
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed
 
 
 def group_and_order(records: Iterator[MessageRecord]
@@ -146,6 +152,14 @@ def _norm(text: str) -> str:
     return " ".join(text.lower().split())
 
 
+def _chatml_safe(s: str) -> str:
+    # Message content is semi-attacker-controlled — other people's texts become
+    # `user` turns. Strip the ChatML control tokens so a crafted body can't
+    # forge a role boundary (e.g. a fake `assistant` turn) in the flat training
+    # text that a Path C LoRA would then learn to emit as you.
+    return s.replace("<|im_start|>", "").replace("<|im_end|>", "")
+
+
 def render(fmt: str, system: str, ctx: list[dict], target: str) -> dict:
     if fmt == "openai-chat":
         return {"messages": [{"role": "system", "content": system}, *ctx,
@@ -157,9 +171,9 @@ def render(fmt: str, system: str, ctx: list[dict], target: str) -> dict:
         convs.append({"from": "gpt", "value": target})
         return {"conversations": convs}
     if fmt == "chatml":
-        parts = [f"<|im_start|>system\n{system}<|im_end|>"]
-        parts += [f"<|im_start|>{t['role']}\n{t['content']}<|im_end|>" for t in ctx]
-        parts.append(f"<|im_start|>assistant\n{target}<|im_end|>")
+        parts = [f"<|im_start|>system\n{_chatml_safe(system)}<|im_end|>"]
+        parts += [f"<|im_start|>{t['role']}\n{_chatml_safe(t['content'])}<|im_end|>" for t in ctx]
+        parts.append(f"<|im_start|>assistant\n{_chatml_safe(target)}<|im_end|>")
         return {"text": "\n".join(parts) + "\n"}
     if fmt == "dpo":
         return {"input": {"messages": [{"role": "system", "content": system}, *ctx]},
@@ -269,10 +283,11 @@ def main() -> None:
     rng.shuffle(train_pairs)
     train = [render(args.format, system, c, t) for c, t in train_pairs]
     # The eval split exists to be replayed through `mirror_chat.py --batch`,
-    # which reads openai-chat JSONL per line — a sharegpt JSON array can't be
-    # consumed by anything downstream, so evals for sharegpt builds are
-    # rendered (and written) as openai-chat instead.
-    eval_fmt = "openai-chat" if args.format == "sharegpt" else args.format
+    # which reads openai-chat JSONL per line ({"messages": [...]}). A sharegpt
+    # JSON array, a chatml {"text": ...} row, or a dpo {"input": ...} row can't
+    # be consumed there, so evals for every non-openai-chat build are rendered
+    # (and written) as openai-chat instead.
+    eval_fmt = "openai-chat" if args.format != "openai-chat" else args.format
     evals = [render(eval_fmt, system, c, t) for c, t in eval_pairs]
 
     def write_rows(out, rows: list[dict], fmt: str) -> None:

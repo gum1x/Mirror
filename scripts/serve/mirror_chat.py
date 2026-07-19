@@ -112,7 +112,7 @@ class Mirror:
         # API clients are cached so served requests reuse the HTTP connection
         # pool instead of paying a fresh TCP+TLS handshake per request.
         self._anthropic = None
-        self._openai = None
+        self._openai_client = None
 
     def _snippets(self, turns: list[dict]) -> list[str]:
         query = next((m["content"] for m in reversed(turns) if m["role"] == "user"), "")
@@ -151,13 +151,15 @@ class Mirror:
                        if getattr(b, "type", "") == "text").strip()
 
     def _openai(self, system: str, turns: list[dict]) -> str:
-        if self._openai is None:
+        # NB: the cached client is self._openai_client, not self._openai — an
+        # attribute named _openai would shadow this very method.
+        if self._openai_client is None:
             from openai import OpenAI
-            self._openai = OpenAI()
-        resp = self._openai.chat.completions.create(
+            self._openai_client = OpenAI()
+        resp = self._openai_client.chat.completions.create(
             model=self.args.model, max_tokens=self.args.max_tokens,
             messages=[{"role": "system", "content": system}, *turns])
-        return resp.choices[0].message.content.strip()
+        return (resp.choices[0].message.content or "").strip()
 
     def _ensure_local(self):
         if self._local:

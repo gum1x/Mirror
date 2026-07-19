@@ -13,6 +13,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import sys
 from collections.abc import Iterator
 from datetime import datetime
@@ -21,6 +22,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.schema import MessageRecord, iso_utc, write_jsonl  # noqa: E402
 
 KEEP_TYPES = {"Default", "Reply", "", None}
+# Newer DiscordChatExporter builds emit 7-digit fractional seconds
+# (…05.0510000+00:00); datetime.fromisoformat rejects >6 digits before 3.11,
+# which would silently null EVERY timestamp on the project's 3.9 floor.
+OVERLONG_FRACTION = re.compile(r"\.(\d{6})\d+")
 
 
 def parse_file(path: str, me: list[str], me_id: str | None) -> Iterator[MessageRecord]:
@@ -41,8 +46,9 @@ def parse_file(path: str, me: list[str], me_id: str | None) -> Iterator[MessageR
                                  (author.get("nickname") or "").lower()})
         ts = None
         if m.get("timestamp"):
+            raw = OVERLONG_FRACTION.sub(r".\1", m["timestamp"].replace("Z", "+00:00"))
             try:
-                ts = iso_utc(datetime.fromisoformat(m["timestamp"].replace("Z", "+00:00")))
+                ts = iso_utc(datetime.fromisoformat(raw))
             except ValueError:
                 ts = None
         yield MessageRecord(
@@ -70,7 +76,12 @@ def main() -> None:
 
     def gen() -> Iterator[MessageRecord]:
         for f in files:
-            yield from parse_file(f, args.me, args.me_id)
+            # A single corrupt export must not abort the whole run and discard
+            # every other file's output.
+            try:
+                yield from parse_file(f, args.me, args.me_id)
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"⚠️  skipping {f}: {e}", file=sys.stderr)
 
     n = write_jsonl(gen(), args.output)
     print(f"Wrote {n} messages from {len(files)} file(s) → {args.output}", file=sys.stderr)

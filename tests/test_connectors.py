@@ -270,6 +270,114 @@ def test_imessage_json_uses_date_when_timestamp_missing(tmp_path):
     assert all(r["conversation_id"] == "Alex" for r in recs)
 
 
+# ── Instagram: bad timestamp + corrupt-file tolerance (the #61 shape) ────────
+
+def test_instagram_tolerates_bad_timestamp(tmp_path):
+    # instagram was the one connector whose fromtimestamp had no guard: a single
+    # garbage timestamp_ms killed the run and (via write_jsonl's staged tmp)
+    # discarded every thread's output.
+    thread = tmp_path / "inbox" / "alex_123"
+    thread.mkdir(parents=True)
+    (thread / "message_1.json").write_text(json.dumps({
+        "participants": [{"name": "Sam"}, {"name": "Alex"}], "title": "Alex",
+        "messages": [
+            {"sender_name": "Alex", "timestamp_ms": 1709675400000, "content": "before"},
+            {"sender_name": "Sam", "timestamp_ms": "not-a-number", "content": "bad ts keep me"},
+            {"sender_name": "Alex", "timestamp_ms": 1709675480000, "content": "after"},
+        ],
+    }), encoding="utf-8")
+    recs, _ = run("scripts/connectors/instagram_parse.py", tmp_path / "inbox", "--me", "Sam")
+    assert [r["text"] for r in recs] == ["before", "bad ts keep me", "after"]
+    bad = next(r for r in recs if r["text"] == "bad ts keep me")
+    assert bad["timestamp"] is None and bad["is_from_me"] is True
+
+
+def test_instagram_skips_corrupt_thread_file(tmp_path):
+    inbox = tmp_path / "inbox"
+    good = inbox / "alex_1"
+    good.mkdir(parents=True)
+    (good / "message_1.json").write_text(json.dumps({
+        "title": "Alex",
+        "messages": [{"sender_name": "Sam", "timestamp_ms": 1709675400000, "content": "kept"}],
+    }), encoding="utf-8")
+    bad = inbox / "zzz_2"
+    bad.mkdir(parents=True)
+    (bad / "message_1.json").write_text("{ not valid json", encoding="utf-8")
+    recs, err = run("scripts/connectors/instagram_parse.py", inbox, "--me", "Sam")
+    assert [r["text"] for r in recs] == ["kept"]      # good file survives the bad one
+    assert "skipping" in err.lower()
+
+
+# ── SMS: direction across all sent-side types, drafts dropped, truncation ─────
+
+def test_sms_direction_types_and_draft_dropped(tmp_path):
+    # type 1 = received; 2 sent, 4 outbox, 5 failed, 6 queued are all you;
+    # 3 = draft was never sent and must be dropped entirely.
+    f = tmp_path / "sms.xml"
+    f.write_text(
+        '<?xml version="1.0"?><smses count="4">'
+        '<sms address="+1555" date="1709675400000" type="1" body="incoming"/>'
+        '<sms address="+1555" date="1709675410000" type="4" body="outbox mine"/>'
+        '<sms address="+1555" date="1709675420000" type="5" body="failed mine"/>'
+        '<sms address="+1555" date="1709675430000" type="3" body="a draft"/>'
+        '</smses>', encoding="utf-8")
+    recs, _ = run("scripts/connectors/sms_xml_parse.py", f)
+    by = {r["text"]: r for r in recs}
+    assert "a draft" not in by
+    assert by["incoming"]["is_from_me"] is False
+    assert by["outbox mine"]["is_from_me"] is True
+    assert by["failed mine"]["is_from_me"] is True
+
+
+def test_sms_truncated_xml_keeps_earlier_records(tmp_path):
+    # A malformed byte mid-file must not discard the records already parsed.
+    f = tmp_path / "sms.xml"
+    f.write_text(
+        '<?xml version="1.0"?><smses count="3">'
+        '<sms address="+1555" date="1709675400000" type="2" body="first"/>'
+        '<sms address="+1555" date="1709675410000" type="1" body="second"/>'
+        '<sms address="+1555" date="1709675420000" type="2" body="third" & broken>',
+        encoding="utf-8")
+    recs, err = run("scripts/connectors/sms_xml_parse.py", f)
+    assert [r["text"] for r in recs] == ["first", "second"]
+    assert "parse error" in err.lower()
+
+
+# ── Discord: 7-digit fractional seconds (3.9 fromisoformat) + broadcast ───────
+
+def test_discord_parses_seven_digit_fractional_seconds(tmp_path):
+    # Newer exporter builds emit .0510000; datetime.fromisoformat rejects >6
+    # fractional digits before 3.11, which silently nulled EVERY timestamp.
+    f = tmp_path / "dm.json"
+    f.write_text(json.dumps({
+        "channel": {"name": "alex-dm", "id": "99"},
+        "messages": [
+            {"id": "1", "type": "Default", "timestamp": "2024-03-05T21:50:00.0510000+00:00",
+             "author": {"id": "7", "name": "sam"}, "content": "hi"},
+        ],
+    }), encoding="utf-8")
+    recs, _ = run("scripts/connectors/discord_parse.py", f, "--me-id", "7")
+    assert recs[0]["timestamp"] == "2024-03-05T21:50:00.051000Z"   # not None
+
+
+def test_slack_keeps_thread_broadcast(tmp_path):
+    # thread_broadcast is a real message you posted ("also send to channel") —
+    # it must not be dropped with the system/bot subtypes.
+    (tmp_path / "users.json").write_text(
+        '[{"id":"U1","profile":{"display_name":"Sam"}}]', encoding="utf-8")
+    chan = tmp_path / "general"
+    chan.mkdir()
+    (chan / "2024-03-05.json").write_text(json.dumps([
+        {"type": "message", "subtype": "thread_broadcast", "user": "U1",
+         "ts": "1709675400.0", "text": "shipping the fix now"},
+        {"type": "message", "subtype": "channel_join", "user": "U1",
+         "ts": "1709675410.0", "text": "joined"},
+    ]), encoding="utf-8")
+    recs, _ = run("scripts/connectors/slack_parse.py", tmp_path, "--me", "Sam")
+    assert [r["text"] for r in recs] == ["shipping the fix now"]   # join dropped, broadcast kept
+    assert recs[0]["is_from_me"] is True
+
+
 if __name__ == "__main__":
     import traceback
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
