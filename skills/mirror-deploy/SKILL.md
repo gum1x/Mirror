@@ -46,10 +46,20 @@ of the user's real messages are retrieved per turn.
 ## Beyond the REPL
 
 - **Batch / eval:** `--batch eval.jsonl --out preds.jsonl` (used by `mirror-evaluation`).
-- **As an API:** wrap `mirror_chat.generate()` in a small FastAPI/Flask endpoint;
-  the function takes a message list and returns the Mirror's reply. Keep the
-  style card and retriever loaded once at startup.
-- **Real surfaces (advanced, opt-in):** the same `generate()` can back an
+- **As an API:** run the shipped HTTP server, `scripts/serve/mirror_server.py`,
+  which loads the model/retriever once at startup and exposes `POST /chat` plus
+  an OpenAI-compatible `POST /v1/chat/completions`. It reuses the same path
+  flags as `mirror_chat.py`. **Set `MIRROR_TOKEN`** to require a bearer token
+  (mandatory for any non-loopback `--host`, since with `--rag` the server can
+  quote the user's real messages):
+  ```bash
+  MIRROR_TOKEN=$(openssl rand -hex 16) python scripts/serve/mirror_server.py \
+      --path A --style-card persona/style_card.md --corpus data/scrubbed.jsonl --rag
+  ```
+  To embed it in your own process instead, call
+  `mirror_chat.build_mirror(args)` once and then `mirror.reply(turns)` per
+  request (`turns` is a list of `{"role", "content"}` dicts).
+- **Real surfaces (advanced, opt-in):** the same `mirror.reply()` can back an
   autoresponder. **Get explicit consent and disclose** — a Mirror replying as the
   user to other people must not be used to deceive. Gate it behind human review
   for anything that matters, and tell counterparties they may be talking to an AI.

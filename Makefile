@@ -19,7 +19,8 @@ test:
 	$(PY) tests/test_connectors.py
 
 lint:
-	ruff check scripts tests || echo "install ruff:  pipx install ruff"
+	@command -v ruff >/dev/null 2>&1 || { echo "install ruff:  pipx install ruff"; exit 1; }
+	ruff check scripts tests
 
 fmt:
 	ruff format scripts tests
