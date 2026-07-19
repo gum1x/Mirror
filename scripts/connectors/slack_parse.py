@@ -68,10 +68,13 @@ def parse(export_dir: str, me_id: str | None, users: dict[str, str]) -> Iterator
         with open(jf, encoding="utf-8") as fh:
             try:
                 msgs = json.load(fh)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                print(f"⚠️  skipping {jf}: {e}", file=sys.stderr)
                 continue
         for m in msgs:
-            if m.get("type") != "message" or m.get("subtype"):
+            # Drop system/bot subtypes, but keep thread_broadcast — those are
+            # real messages you posted ("also send to channel").
+            if m.get("type") != "message" or m.get("subtype") not in (None, "", "thread_broadcast"):
                 continue
             text = clean(m.get("text", ""), users)
             if not text:

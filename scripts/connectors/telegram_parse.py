@@ -40,7 +40,7 @@ def _ts(msg: dict, tz: str | None) -> str | None:
         try:
             dt = datetime.fromtimestamp(int(msg["date_unixtime"]), tz=timezone.utc)
             return iso_utc(dt)
-        except (ValueError, OSError):
+        except (ValueError, OSError, OverflowError):
             pass
     if msg.get("date"):
         try:

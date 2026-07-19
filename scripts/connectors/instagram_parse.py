@@ -53,7 +53,12 @@ def parse_thread(path: str, me: list[str], source: str) -> Iterator[MessageRecor
         is_me = sender.lower() in me_lower
         ts = None
         if msg.get("timestamp_ms"):
-            ts = iso_utc(datetime.fromtimestamp(msg["timestamp_ms"] / 1000, tz=timezone.utc))
+            # Guard like every other connector: one garbage timestamp must not
+            # crash the run and (via write_jsonl's staged tmp) discard the lot.
+            try:
+                ts = iso_utc(datetime.fromtimestamp(msg["timestamp_ms"] / 1000, tz=timezone.utc))
+            except (TypeError, ValueError, OSError, OverflowError):
+                ts = None
         yield MessageRecord(
             source=source, conversation_id=title, text=content,
             is_from_me=is_me, sender="me" if is_me else (sender or "other"), timestamp=ts,
@@ -79,7 +84,12 @@ def main() -> None:
 
     def gen() -> Iterator[MessageRecord]:
         for f in files:
-            yield from parse_thread(f, args.me, args.source)
+            # One corrupt/truncated export must not abort a whole-folder run and
+            # throw away every other thread's output.
+            try:
+                yield from parse_thread(f, args.me, args.source)
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"⚠️  skipping {f}: {e}", file=sys.stderr)
 
     n = write_jsonl(gen(), args.output)
     print(f"Wrote {n} messages from {len(files)} thread file(s) → {args.output}", file=sys.stderr)
