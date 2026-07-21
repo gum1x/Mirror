@@ -476,6 +476,23 @@ def test_purge_dry_run_default_and_targeted_delete(tmp_path):
     assert (tmp_path / "precious.txt").exists()
 
 
+def test_purge_overlapping_targets_no_spurious_failure(tmp_path):
+    # `--what data,clean` selects the data/ dir AND the files `clean` names inside
+    # it. Removing the dir already deletes the children, so the follow-up delete of
+    # each child hit ENOENT — exit 1 plus a false "FAILED … still exist" report on
+    # the user's most sensitive files, even though the purge fully succeeded.
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "clean.jsonl").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "data" / "scrubbed.jsonl").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "data" / "raw.jsonl").write_text("{}\n", encoding="utf-8")
+    p = subprocess.run([PY, str(REPO / "scripts/maintenance/purge.py"),
+                        "--dir", str(tmp_path), "--what", "data,clean", "--yes"],
+                       capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    assert "FAILED" not in p.stderr                 # no spurious failure on nested paths
+    assert not (tmp_path / "data").exists()          # everything under data/ removed
+
+
 def test_telegram_zero_mine_warning_lists_senders(tmp_path):
     res = tmp_path / "result.json"
     res.write_text(json.dumps({"messages": [
