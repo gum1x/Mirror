@@ -51,6 +51,13 @@ def _human(n: int) -> str:
     return f"{n:.1f}TB"
 
 
+def _within(path: str, ancestor: str) -> bool:
+    """True if `path` sits inside directory `ancestor` (not equal to it).
+    Uses commonpath, not a string prefix, so 'data' never swallows 'database'."""
+    a, p = os.path.abspath(ancestor), os.path.abspath(path)
+    return p != a and os.path.commonpath([a, p]) == a
+
+
 def collect(base: str, what: list[str]) -> list[str]:
     paths: list[str] = []
     for key in what:
@@ -58,8 +65,13 @@ def collect(base: str, what: list[str]) -> list[str]:
         # (or a shell-expanded `*`) can't select paths outside the five targets.
         for pat in TARGETS[key]:
             paths.extend(sorted(glob.glob(os.path.join(base, pat))))
-    # de-dupe, keep existing
-    return [p for p in dict.fromkeys(paths) if os.path.exists(p)]
+    existing = [p for p in dict.fromkeys(paths) if os.path.exists(p)]  # de-dupe, keep existing
+    # Drop paths nested under another selected path (e.g. `--what data,clean`,
+    # where `clean` names files inside the `data/` dir). Deleting the parent
+    # already removes them; a second delete would fail with ENOENT and report a
+    # false "still exists" failure — on the user's most sensitive files — and
+    # exit nonzero even though the purge fully succeeded.
+    return [p for p in existing if not any(_within(p, other) for other in existing)]
 
 
 def remote_reminder(purge_remote: bool, yes_remote: bool) -> None:
