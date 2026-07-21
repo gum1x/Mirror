@@ -17,8 +17,9 @@ machine.
 
 Unsloth is the recommended trainer (fastest, lowest memory, single-GPU QLoRA):
 ```bash
-pip install "unsloth[cu121] @ git+https://github.com/unslothai/unsloth.git"
+pip install "unsloth[cu121] @ git+https://github.com/unslothai/unsloth.git@<commit-sha>"
 # (pins compatible torch / transformers / peft / trl / bitsandbytes)
+# PIN the commit (@<commit-sha>) — SECURITY.md requires it for supply-chain safety.
 ```
 Axolotl or HF PEFT+TRL also work; `lora_train.py` uses Unsloth if present and
 falls back to a plain TRL `SFTTrainer` otherwise.
