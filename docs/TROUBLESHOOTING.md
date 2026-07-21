@@ -15,7 +15,7 @@ learn. Fix the "who is me" argument, which differs per connector:
 | Telegram, Slack, Discord | `--me "Name"` and/or `--me-id <stable id>` (id is most reliable) |
 | Gmail | `--me you@example.com`; add `--match-from` only for a mixed mbox |
 | iMessage | usually nothing — the DB stores `is_from_me`; `--me-handle` only labels the other party |
-| SMS (Android) | nothing — auto-detected from `type="2"` (sent) |
+| SMS (Android) | nothing — auto-detected from `type="2"` (SMS) / `msg_box="2"` (MMS) |
 
 Open the export and check how your own lines are labeled, then pass that exact value.
 

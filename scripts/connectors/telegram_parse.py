@@ -60,6 +60,10 @@ def _ts(msg: dict, tz: str | None) -> str | None:
 def _chats(data: dict) -> Iterator[dict]:
     if "chats" in data and isinstance(data["chats"], dict):
         yield from data["chats"].get("list", [])
+        # Groups you've left still hold years of your own messages; the full
+        # export files them under left_chats, not chats.
+        if isinstance(data.get("left_chats"), dict):
+            yield from data["left_chats"].get("list", [])
     elif "messages" in data:           # single-chat export
         yield data
     else:                              # some exports nest differently

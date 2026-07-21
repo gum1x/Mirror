@@ -19,6 +19,7 @@ import os
 import re
 import sys
 import threading
+import time
 from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -212,6 +213,7 @@ def batch(mirror: Mirror, path: str, out_path: str) -> None:
     with open(path, encoding="utf-8") as fh:
         rows = [json.loads(line) for line in fh if line.strip()]
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    failed = 0
     with open(out_path, "w", encoding="utf-8") as out:
         for i, row in enumerate(rows):
             msgs = row.get("messages", [])
@@ -222,12 +224,34 @@ def batch(mirror: Mirror, path: str, out_path: str) -> None:
                 turns = turns[:-1]
             if not turns:
                 continue
-            pred = mirror.reply(turns)
+            # Each generated row costs an API call: a transient 429/5xx at row
+            # N must not kill the run and waste the rows before it. Retry with
+            # backoff, then skip the one row and keep going.
+            pred = None
+            for attempt in range(3):
+                try:
+                    pred = mirror.reply(turns)
+                    break
+                except Exception as e:
+                    if attempt == 2:
+                        failed += 1
+                        print(f"  row {i}: failed after 3 tries ({e}) — skipped",
+                              file=sys.stderr)
+                    else:
+                        wait = 2 * 2 ** attempt
+                        print(f"  row {i}: {e} — retrying in {wait}s", file=sys.stderr)
+                        time.sleep(wait)
+            if pred is None:
+                continue
             out.write(json.dumps({"prompt": turns, "reference": reference,
                                   "prediction": pred}, ensure_ascii=False) + "\n")
+            out.flush()  # a crash mid-run keeps the finished rows on disk
             if (i + 1) % 10 == 0:
                 print(f"  generated {i + 1}/{len(rows)}", file=sys.stderr)
     print(f"Wrote predictions → {out_path}", file=sys.stderr)
+    if failed:
+        print(f"⚠️  {failed} row(s) failed and were skipped — the eval will score "
+              "fewer examples.", file=sys.stderr)
 
 
 def add_serving_args(ap: argparse.ArgumentParser) -> None:

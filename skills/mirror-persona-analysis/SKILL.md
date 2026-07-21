@@ -24,8 +24,7 @@ python scripts/persona/style_analyze.py data/scrubbed.jsonl -o persona/ --name "
 Writes:
 - `persona/style_card.json` — measured voice: message-length distribution,
   emoji rate + favorites, punctuation/capitalization habits, all-lowercase
-  ratio, signature words/phrases (n-grams), common openers and sign-offs, slang
-  inventory, average burst length.
+  ratio, signature words/phrases (n-grams), common openers, slang inventory.
 - `persona/style_card.md` — a first-draft system prompt auto-generated from those
   stats (e.g. "writes in all lowercase," "rarely uses end punctuation," "opens
   with 'yo' / 'hey'," "favorite words: …").

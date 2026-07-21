@@ -17,9 +17,12 @@ keywords = ["llm", "fine-tuning", "personal-ai", "digital-twin", "style-cloning"
 dependencies = []
 
 [project.optional-dependencies]
-anthropic = ["anthropic>=0.40.0"]                       # Path A (Claude) + eval judge
+# Floors matter: mirror_chat passes `thinking={"type": "adaptive"}` (needs a
+# 2025+ anthropic SDK) and openai_finetune passes `method=` to jobs.create
+# (added with DPO support) — older SDKs fail with TypeError on those kwargs.
+anthropic = ["anthropic>=0.92.0"]                       # Path A (Claude) + eval judge
 rag = ["sentence-transformers>=3.0", "numpy>=1.26"]     # semantic retrieval
-openai = ["openai>=1.40.0"]                             # Path B (OpenAI fine-tune)
+openai = ["openai>=1.60.0"]                             # Path B (OpenAI fine-tune)
 lora = [                                                # Path C (local QLoRA)
   "torch>=2.3", "transformers>=4.44", "peft>=0.12",
   "trl>=0.16", "datasets>=2.20", "bitsandbytes>=0.43",
@@ -27,7 +30,7 @@ lora = [                                                # Path C (local QLoRA)
 config = ["pyyaml>=6.0"]                                # read mirror.config.yaml
 dev = ["pytest>=7.0"]
 # Convenience meta-extra for the cloud paths (no heavy GPU stack):
-cloud = ["anthropic>=0.40.0", "openai>=1.40.0", "sentence-transformers>=3.0", "numpy>=1.26"]
+cloud = ["anthropic>=0.92.0", "openai>=1.60.0", "sentence-transformers>=3.0", "numpy>=1.26"]
 
 [project.urls]
 Homepage = "https://github.com/gum1x/Mirror"

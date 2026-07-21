@@ -9,6 +9,7 @@ the model learns your new prose, not the thread you replied to.
 from __future__ import annotations
 
 import argparse
+import html
 import mailbox
 import os
 import re
@@ -48,15 +49,14 @@ def _strip_quotes_and_sig(body: str) -> str:
     return "\n".join(out).strip()
 
 
-def _html_to_text(html: str) -> str:
-    html = re.sub(r"(?is)<(script|style).*?</\1>", " ", html)
-    html = re.sub(r"(?i)<br\s*/?>", "\n", html)
-    html = re.sub(r"(?i)</p>", "\n\n", html)
-    html = re.sub(r"<[^>]+>", "", html)
-    html = re.sub(r"&nbsp;", " ", html)
-    html = re.sub(r"&amp;", "&", html)
-    html = re.sub(r"&lt;", "<", html).replace("&gt;", ">")
-    return html
+def _html_to_text(markup: str) -> str:
+    markup = re.sub(r"(?is)<(script|style).*?</\1>", " ", markup)
+    markup = re.sub(r"(?i)<br\s*/?>", "\n", markup)
+    markup = re.sub(r"(?i)</p>", "\n\n", markup)
+    markup = re.sub(r"<[^>]+>", "", markup)
+    # One-pass unescape: handles numeric entities (&#8217; etc.) that the old
+    # hand-rolled replaces missed, and can't double-unescape "&amp;lt;".
+    return html.unescape(markup).replace("\xa0", " ")
 
 
 def _body(msg) -> str:

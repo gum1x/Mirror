@@ -360,6 +360,108 @@ def test_discord_parses_seven_digit_fractional_seconds(tmp_path):
     assert recs[0]["timestamp"] == "2024-03-05T21:50:00.051000Z"   # not None
 
 
+def test_slack_unescapes_entities_in_the_right_order(tmp_path):
+    # Slack escapes exactly &, <, > in message text. "&amp;lt;" is a user who
+    # literally typed "&lt;" — unescaping &amp; first double-unescaped it to "<".
+    (tmp_path / "users.json").write_text(
+        '[{"id":"U1","profile":{"display_name":"Sam"}}]', encoding="utf-8")
+    chan = tmp_path / "general"
+    chan.mkdir()
+    (chan / "2024-03-05.json").write_text(json.dumps([
+        {"type": "message", "user": "U1", "ts": "1709675400.0",
+         "text": "1 &lt; 2 &amp;&amp; 4 &gt; 3, literally &amp;lt;"},
+    ]), encoding="utf-8")
+    recs, _ = run("scripts/connectors/slack_parse.py", tmp_path, "--me", "Sam")
+    assert recs[0]["text"] == "1 < 2 && 4 > 3, literally &lt;"
+
+
+# ── MMS: group chats / long texts must not be silently dropped ───────────────
+
+def test_mms_text_direction_group_sender_and_media_only_drop(tmp_path):
+    f = tmp_path / "sms.xml"
+    f.write_text(
+        '<?xml version="1.0"?><smses count="4">'
+        # received group MMS: text part + SMIL layout part + participant list
+        '<mms date="1709675400000" msg_box="1" address="+15551234567~+15559876543"'
+        ' contact_name="Mom, Dad"><parts>'
+        '<part seq="-1" ct="application/smil" text="&lt;smil&gt;&lt;/smil&gt;"/>'
+        '<part seq="0" ct="text/plain" text="who wants pizza tonight"/></parts>'
+        '<addrs><addr address="+15559876543" type="137"/>'
+        '<addr address="+15551234567" type="151"/></addrs></mms>'
+        # sent MMS
+        '<mms date="1709675410000" msg_box="2" address="+15551234567" contact_name="Mom">'
+        '<parts><part seq="0" ct="text/plain" text="me!! omw"/></parts></mms>'
+        # media-only MMS: no text part -> dropped
+        '<mms date="1709675420000" msg_box="1" address="+15551234567" contact_name="Mom">'
+        '<parts><part seq="0" ct="image/jpeg" data="AAAA"/></parts></mms>'
+        # plain sms still parsed alongside
+        '<sms address="+15551234567" date="1709675430000" type="1" body="classic sms"'
+        ' contact_name="Mom"/>'
+        '</smses>', encoding="utf-8")
+    recs, _ = run("scripts/connectors/sms_xml_parse.py", f)
+    assert [r["text"] for r in recs] == ["who wants pizza tonight", "me!! omw",
+                                         "classic sms"]
+    incoming = recs[0]
+    assert incoming["is_from_me"] is False
+    assert incoming["sender"] == "+15559876543"      # group sender from addr type=137
+    assert incoming["conversation_id"] == "Mom, Dad"
+    sent = recs[1]
+    assert sent["is_from_me"] is True and sent["sender"] == "me"
+    assert sent["timestamp"] == "2024-03-05T21:50:10Z"
+
+
+def test_mms_draft_dropped_and_multiple_text_parts_joined(tmp_path):
+    f = tmp_path / "sms.xml"
+    f.write_text(
+        '<?xml version="1.0"?><smses count="2">'
+        '<mms date="1709675400000" msg_box="3" address="+1555" contact_name="Mom">'
+        '<parts><part seq="0" ct="text/plain" text="never sent draft"/></parts></mms>'
+        '<mms date="1709675410000" msg_box="2" address="+1555" contact_name="Mom">'
+        '<parts><part seq="0" ct="text/plain" text="part one"/>'
+        '<part seq="1" ct="text/plain" text="part two"/></parts></mms>'
+        '</smses>', encoding="utf-8")
+    recs, _ = run("scripts/connectors/sms_xml_parse.py", f)
+    assert [r["text"] for r in recs] == ["part one\npart two"]
+    assert recs[0]["is_from_me"] is True
+
+
+# ── Telegram: left_chats hold your voice too ─────────────────────────────────
+
+def test_telegram_includes_left_chats(tmp_path):
+    res = tmp_path / "result.json"
+    res.write_text(json.dumps({
+        "chats": {"list": [{"name": "Jordan", "id": 1, "messages": [
+            {"id": 1, "type": "message", "date_unixtime": "1712049720",
+             "from": "Sam", "from_id": "user111", "text": "hi"}]}]},
+        "left_chats": {"list": [{"name": "Old Group", "id": 2, "messages": [
+            {"id": 2, "type": "message", "date_unixtime": "1712049730",
+             "from": "Sam", "from_id": "user111", "text": "bye all"}]}]},
+    }), encoding="utf-8")
+    recs, _ = run("scripts/connectors/telegram_parse.py", res, "--me", "Sam")
+    assert {r["conversation_id"] for r in recs} == {"Jordan", "Old Group"}
+    assert all(r["is_from_me"] for r in recs)
+
+
+# ── Gmail: numeric HTML entities must survive the HTML fallback ─────────────
+
+def test_gmail_html_numeric_entities_unescaped(tmp_path):
+    mbox = tmp_path / "Sent.mbox"
+    mbox.write_text(
+        "From sam@example.com Tue Mar 05 21:41:12 2024\n"
+        "From: Sam <sam@example.com>\n"
+        "To: Alex <alex@example.com>\n"
+        "Subject: html only\n"
+        "Date: Tue, 5 Mar 2024 21:41:12 +0000\n"
+        "MIME-Version: 1.0\n"
+        'Content-Type: text/html; charset="utf-8"\n'
+        "\n"
+        "<p>We&#8217;ll meet &amp; talk&nbsp;soon</p>\n",
+        encoding="utf-8")
+    recs, _ = run("scripts/connectors/gmail_mbox_parse.py", mbox, "--me", "sam@example.com")
+    assert recs, "html-only email dropped"
+    assert "We’ll meet & talk soon" in recs[0]["text"]
+
+
 def test_slack_keeps_thread_broadcast(tmp_path):
     # thread_broadcast is a real message you posted ("also send to channel") —
     # it must not be dropped with the system/bot subtypes.

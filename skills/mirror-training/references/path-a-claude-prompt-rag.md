@@ -19,8 +19,8 @@ the best one for "answers and thinks like me."
 
 Two options (the serve script supports both):
 
-- **Keyword (zero deps):** TF-IDF / token overlap over `data/scrubbed.jsonl`.
-  Good enough for many users, instant, fully local index.
+- **Keyword (zero deps):** token-overlap ranking (inverted index) over
+  `data/scrubbed.jsonl`. Good enough for many users, instant, fully local index.
 - **Semantic (recommended):** embed each of the user's messages with a local
   `sentence-transformers` model; cosine-similarity search. Better recall on
   paraphrases. Local — embeddings never leave the machine; only the *retrieved

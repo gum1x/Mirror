@@ -522,6 +522,50 @@ def test_path_b_serving_calls_client_not_shadowed_method():
     assert captured["messages"][-1] == {"role": "user", "content": "hey"}
 
 
+# ── serving: --batch must survive transient API errors mid-run ───────────────
+
+def test_batch_retries_and_skips_failed_rows(tmp_path):
+    # A transient error at row N must not kill the run (each finished row cost
+    # an API call); a persistently failing row is skipped, the rest survive.
+    sys.path.insert(0, str(REPO / "scripts"))
+    sys.path.insert(0, str(REPO / "scripts" / "serve"))
+    import mirror_chat
+
+    src = tmp_path / "eval.jsonl"
+    rows = [
+        {"messages": [{"role": "user", "content": "hey"},
+                      {"role": "assistant", "content": "yo"}]},
+        {"messages": [{"role": "user", "content": "you up?"},
+                      {"role": "assistant", "content": "barely"}]},
+        {"messages": [{"role": "user", "content": "lunch?"},
+                      {"role": "assistant", "content": "omw"}]},
+    ]
+    src.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+
+    calls = {"n": 0}
+
+    class FlakyMirror:
+        def reply(self, turns):
+            calls["n"] += 1
+            text = turns[-1]["content"]
+            if text == "you up?":
+                raise RuntimeError("503 flaky")        # fails every attempt
+            if text == "hey" and calls["n"] == 1:
+                raise RuntimeError("429 once")         # fails once, then works
+            return "ok:" + text
+
+    real_sleep = mirror_chat.time.sleep
+    mirror_chat.time.sleep = lambda s: None            # no real backoff in tests
+    try:
+        out = tmp_path / "preds.jsonl"
+        mirror_chat.batch(FlakyMirror(), str(src), str(out))
+    finally:
+        mirror_chat.time.sleep = real_sleep
+    preds = [json.loads(ln) for ln in out.read_text().splitlines() if ln.strip()]
+    assert [p["prediction"] for p in preds] == ["ok:hey", "ok:lunch?"]
+    assert [p["reference"] for p in preds] == ["yo", "omw"]
+
+
 # ── persona/eval: variation selector must not count as an emoji ──────────────
 
 def test_emoji_metric_ignores_variation_selector():

@@ -48,6 +48,11 @@ means *sent by you* (`type=1` is received). The parser flags `type==2` →
 `is_from_me`, converts `date` (epoch ms) → timestamp, uses `contact_name`/
 `address` → `conversation_id`, and streams (flat memory) on large backups.
 
+Group chats and long/media texts arrive as `<mms>` elements instead: direction
+lives in `msg_box` (same 1=received / 2=sent values), the text in a
+`ct="text/plain"` `<part>`, and the group sender in `<addr type="137">`. The
+parser handles both; media-only MMS (no text part) and drafts are dropped.
+
 ## Signal
 
 Hardest — Signal's DB is encrypted by design.

@@ -84,5 +84,7 @@ Tips to pass along:
 - **Sent email ≈ your most "composed" voice; texts ≈ your most casual voice.**
   Mixing both gives the model range. Tell the formatter which surface you're
   targeting so it can weight accordingly.
-- **Exports can be large.** Parsers stream line-by-line and never load the whole
-  file into memory.
+- **Exports can be large.** The text/XML/mbox parsers (whatsapp, sms, imessage,
+  gmail) stream and keep memory flat. The JSON connectors (telegram, slack,
+  discord, instagram) must parse a whole file at a time — they load one export
+  file into memory, so a single multi-GB `result.json` needs that much RAM.

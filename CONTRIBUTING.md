@@ -14,7 +14,7 @@ python tests/test_connectors.py      # connector coverage
 make lint                            # ruff check — CI gates on this
 ```
 
-CI compiles `scripts` + `tests`, runs both suites on Python 3.9–3.12, and fails
+CI compiles `scripts` + `tests`, runs both suites on Python 3.9–3.14, and fails
 on any `ruff check` finding. Keep the core stdlib-only and avoid syntax newer
 than 3.9. Anything heavy goes behind an optional extra in `pyproject.toml`.
 
@@ -43,8 +43,9 @@ Copy an existing one (`telegram_parse.py` is a good template) and follow the sha
    ```
 2. `argparse` with: a positional `input`, a "who is me" flag (`--me` / `--me-id` /
    `--me-handle` as appropriate), and `-o/--output` defaulting to `-` (stdout).
-3. A streaming generator. Read the export line by line or with `iterparse`;
-   never load a whole export into memory.
+3. A streaming generator. Stream where the format allows (line by line, or
+   `iterparse` for XML); if the format forces a full `json.load`, load one
+   export file at a time — never slurp a whole folder of them.
 4. For each message, build a `MessageRecord`, converting the timestamp to UTC
    with `iso_utc(...)` and setting `is_from_me`.
 5. Finish with `n = write_jsonl(gen(), args.output)` and a one-line stderr
