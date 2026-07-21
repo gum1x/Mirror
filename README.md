@@ -5,7 +5,7 @@
 
 Mirror pulls your real conversations out of the apps you already use: iMessage, WhatsApp, Telegram, Gmail, Slack, Discord, Instagram, SMS. It works out how you actually write, down to message length, punctuation, emoji, slang, and the way you explain things. Then it picks a training method that fits your data and your privacy comfort, trains, and scores the result on conversations it never saw. What you end up with answers the way you would, grounded in things you've actually said. Not a generic chatbot wearing your name.
 
-Nine skills, twenty scripts, and a core pipeline that runs on the Python standard library alone.
+Nine skills, twenty-two scripts, and a core pipeline that runs on the Python standard library alone.
 
 > Built with AI assistance (Anthropic's Claude). I've reviewed and tested it, but read the code before running it on your own data, and treat the privacy notes as guidance, not a guarantee.
 

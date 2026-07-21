@@ -69,7 +69,7 @@ def token_f1(a: str, b: str) -> float:
     return 2 * p * r / (p + r)
 
 
-def llm_judge(rows: list[dict], name: str) -> float:
+def llm_judge(rows: list[dict], name: str, model: str) -> float:
     try:
         import anthropic
     except ImportError:
@@ -84,7 +84,7 @@ def llm_judge(rows: list[dict], name: str) -> float:
                   f"A: {row['reference']}\nB: {row['prediction']}")
         try:
             resp = client.messages.create(
-                model="claude-opus-4-8", max_tokens=32,
+                model=model, max_tokens=32,
                 messages=[{"role": "user", "content": prompt}])
             m = re.search(r"[01](?:\.\d+)?", resp.content[0].text)
             if m:
@@ -99,6 +99,8 @@ def main() -> None:
     ap.add_argument("predictions", help="preds.jsonl from mirror_chat.py --batch")
     ap.add_argument("--style", required=True, help="persona/style_card.json")
     ap.add_argument("--judge", action="store_true", help="Add a Claude LLM-judge score.")
+    ap.add_argument("--judge-model", default="claude-opus-4-8",
+                    help="Claude model used by --judge (default claude-opus-4-8).")
     ap.add_argument("--target", type=float, default=0.7, help="Pass/fail threshold.")
     args = ap.parse_args()
 
@@ -114,7 +116,8 @@ def main() -> None:
 
     sm = style_match(fingerprint(preds), style)
     overlap = statistics.mean(token_f1(p, r) for p, r in zip(preds, refs))
-    judge = llm_judge(rows, style.get("name", "the user")) if args.judge else -1.0
+    judge = (llm_judge(rows, style.get("name", "the user"), args.judge_model)
+             if args.judge else -1.0)
 
     if judge >= 0:
         blended = 0.6 * sm["overall"] + 0.2 * overlap + 0.2 * judge

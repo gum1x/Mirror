@@ -8,8 +8,10 @@
 # Prefer the grouped extras in pyproject.toml when you can:
 #   pip install ".[openai]"   ".[rag]"   ".[lora]"   ".[anthropic]"   ".[cloud]"
 
-anthropic>=0.40.0           # Path A (Claude persona + RAG) + eval LLM-judge
-openai>=1.40.0              # Path B (OpenAI fine-tune SFT/DPO)
+anthropic>=0.92.0           # Path A (Claude persona + RAG) + eval LLM-judge
+                            # (>=0.92: mirror_chat uses thinking={"type": "adaptive"})
+openai>=1.60.0              # Path B (OpenAI fine-tune SFT/DPO)
+                            # (>=1.60: openai_finetune passes method= for SFT/DPO jobs)
 sentence-transformers>=3.0  # semantic RAG (mirror_chat.py --semantic) — optional
 numpy>=1.26                 # semantic RAG
 pyyaml>=6.0                 # optional: parse mirror.config.yaml

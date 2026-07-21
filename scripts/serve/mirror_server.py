@@ -56,7 +56,10 @@ def make_app(mirror):
     token = os.environ.get("MIRROR_TOKEN", "")
 
     def require_token(authorization: str = Header(default="")):
-        if token and not secrets.compare_digest(authorization, f"Bearer {token}"):
+        # Compare as bytes: compare_digest raises TypeError on non-ASCII str
+        # input, which would turn a garbage Authorization header into a 500.
+        expected = f"Bearer {token}".encode()
+        if token and not secrets.compare_digest(authorization.encode("utf-8"), expected):
             raise HTTPException(401, "send 'Authorization: Bearer $MIRROR_TOKEN'")
 
     def extract_turns(payload: dict) -> list[dict]:

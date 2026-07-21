@@ -59,7 +59,10 @@ def resolve_me_id(raw_users: list[dict], me: list[str], me_id: str | None) -> st
 def clean(text: str, users: dict[str, str]) -> str:
     text = MENTION.sub(lambda m: "@" + users.get(m.group(1), m.group(1)), text)
     text = LINK.sub(lambda m: m.group(2) or m.group(1), text)
-    return text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").strip()
+    # Slack escapes exactly &, <, > in message text. &amp; must be unescaped
+    # LAST: a user who typed a literal "&lt;" arrives as "&amp;lt;", and
+    # unescaping &amp; first would double-unescape it into "<".
+    return text.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").strip()
 
 
 def parse(export_dir: str, me_id: str | None, users: dict[str, str]) -> Iterator[MessageRecord]:
