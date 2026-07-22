@@ -47,7 +47,7 @@ def load_system(path: str | None) -> str:
 
 
 def _parse_ts(ts: str | None) -> dt.datetime | None:
-    if not ts:
+    if not ts or not isinstance(ts, str):  # schema validates, but stay safe
         return None
     try:
         parsed = dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))

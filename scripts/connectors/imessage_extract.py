@@ -81,7 +81,13 @@ def extract(db_path: str, service: str | None, me_handle: str | None
     con = sqlite3.connect(uri, uri=True)
     con.row_factory = sqlite3.Row
     try:
-        for row in con.execute(QUERY):
+        try:
+            cur = con.execute(QUERY)
+        except sqlite3.Error as e:
+            # Missing/locked/garbage DB: a one-line hint beats a raw traceback.
+            sys.exit(f"Could not read {db_path}: {e} — copy chat.db out of "
+                     "~/Library/Messages first and grant your terminal Full Disk Access.")
+        for row in cur:
             if service and (row["service"] or "").lower() != service.lower():
                 continue
             text = row["text"]
@@ -101,11 +107,31 @@ def extract(db_path: str, service: str | None, me_handle: str | None
         con.close()
 
 
+def _json_bool(v) -> bool:
+    """SQLite→JSON dumps carry "0"/"1"/"false"/"true" strings; bool("false") is
+    True, which would flip other people's messages into YOUR training voice."""
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "y")
+    return bool(v)
+
+
+def _json_ts(v) -> str | None:
+    """Accept ISO strings as-is; convert epoch numbers (s or ms) instead of
+    letting them leak into the corpus and crash the dataset builder later."""
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        try:
+            secs = v / 1000 if abs(v) > 1e11 else float(v)
+            return iso_utc(datetime.fromtimestamp(secs, tz=timezone.utc))
+        except (ValueError, OSError, OverflowError):
+            return None
+    return v if isinstance(v, str) else None
+
+
 def extract_from_json(path: str) -> Iterator[MessageRecord]:
     """Generic importer for a JSON array (e.g. from imessage-exporter).
 
-    Expects objects with: text, is_from_me (bool/int), timestamp (ISO) or
-    date, conversation_id (or chat), sender (optional).
+    Expects objects with: text, is_from_me (bool/int/"0"/"true"), timestamp
+    (ISO string or epoch) or date, conversation_id (or chat), sender (optional).
     """
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
@@ -114,13 +140,16 @@ def extract_from_json(path: str) -> Iterator[MessageRecord]:
         text = (it.get("text") or "").strip()
         if not text:
             continue
-        is_me = bool(it.get("is_from_me"))
+        is_me = _json_bool(it.get("is_from_me"))
+        ts = it.get("timestamp")
+        if ts is None:
+            ts = it.get("date")
         yield MessageRecord(
             source="imessage",
             conversation_id=str(it.get("conversation_id") or it.get("chat") or "imessage"),
             text=text, is_from_me=is_me,
             sender="me" if is_me else str(it.get("sender") or "other"),
-            timestamp=it.get("timestamp") or it.get("date"),
+            timestamp=_json_ts(ts),
         )
 
 
@@ -134,6 +163,8 @@ def main() -> None:
                     help="Treat input as a generic JSON export, not chat.db.")
     ap.add_argument("-o", "--output", default="-", help="Output .jsonl (default stdout).")
     args = ap.parse_args()
+    if not os.path.exists(os.path.expanduser(args.input)):
+        ap.error(f"input not found: {args.input}")
 
     gen = (extract_from_json(args.input) if args.from_json
            else extract(args.input, args.service, args.me_handle))

@@ -267,6 +267,54 @@ def test_pii_scrub_compact_phones_and_dashless_ssn(tmp_path):
     assert "2023-2024" in t
 
 
+def test_pii_scrub_keeps_dates_and_redacts_full_intl_phone(tmp_path):
+    src = tmp_path / "in.jsonl"
+    rec = {"source": "whatsapp", "conversation_id": "x", "is_from_me": True, "sender": "me",
+           "text": ("the offsite is on 2024-03-05, deadline 05.03.2024 right? "
+                    "the meeting ran 2 hours way over, call me at +1 (555) 123-4567, "
+                    "im at 742 Evergreen Terrace")}
+    src.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    recs, _ = run("scripts/format/pii_scrub.py", src)
+    t = recs[0]["text"]
+    # dates are not phone numbers
+    assert "2024-03-05" in t
+    assert "05.03.2024" in t
+    # everyday duration phrases are not street addresses
+    assert "ran 2 hours way over" in t
+    # the WHOLE phone goes, including the "+1 " country code that used to leak
+    assert "+1" not in t and "555" not in t and "<PHONE>" in t
+    # real addresses still redact
+    assert "Evergreen" not in t and "<ADDRESS>" in t
+
+
+def test_pii_scrub_ignores_empty_custom_terms(tmp_path):
+    # --custom "$UNSET_VAR" passed an empty string, which matched at every
+    # position and interleaved <REDACTED> between all characters — silently.
+    src = tmp_path / "in.jsonl"
+    rec = {"source": "whatsapp", "conversation_id": "x", "is_from_me": True, "sender": "me",
+           "text": "totally normal message"}
+    src.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    recs, err = run("scripts/format/pii_scrub.py", src, "--custom", "")
+    assert recs[0]["text"] == "totally normal message"
+    assert "empty --custom" in err
+
+
+# ── schema: numeric timestamps are rejected at the gate, not a crash later ───
+
+def test_schema_rejects_numeric_timestamp_with_line_number(tmp_path):
+    src = tmp_path / "in.jsonl"
+    good = {"source": "sms", "conversation_id": "c", "is_from_me": True,
+            "sender": "me", "text": "hi there"}
+    bad = dict(good, timestamp=1709675400000)   # epoch ms leaked into the corpus
+    src.write_text(json.dumps(good) + "\n" + json.dumps(bad) + "\n", encoding="utf-8")
+    p = subprocess.run([PY, str(REPO / "scripts/format/build_dataset.py"), str(src),
+                        "-o", str(tmp_path / "train.jsonl")],
+                       capture_output=True, text=True)
+    assert p.returncode != 0
+    assert "line 2" in p.stderr and "timestamp" in p.stderr
+    assert "Traceback" not in p.stderr          # used to be a raw AttributeError
+
+
 # ── regression: sharegpt builds must emit an eval split --batch can consume ──
 
 def test_sharegpt_eval_split_is_openai_chat_jsonl(tmp_path):

@@ -99,6 +99,8 @@ def main() -> None:
     ap.add_argument("input", help="The .xml backup file.")
     ap.add_argument("-o", "--output", default="-")
     args = ap.parse_args()
+    if not os.path.exists(args.input):
+        ap.error(f"input not found: {args.input}")
     n = write_jsonl(parse(args.input), args.output)
     print(f"Wrote {n} SMS/MMS messages → {args.output}", file=sys.stderr)
 
