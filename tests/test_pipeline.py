@@ -539,6 +539,46 @@ def test_path_b_serving_calls_client_not_shadowed_method():
     assert captured["messages"][-1] == {"role": "user", "content": "hey"}
 
 
+# ── schema: a non-dict `extra` + stray key must not escape as a traceback ────
+
+def test_read_jsonl_rejects_non_dict_extra_without_traceback(tmp_path):
+    src = tmp_path / "in.jsonl"
+    good = {"source": "sms", "conversation_id": "c", "is_from_me": True,
+            "sender": "me", "text": "hi there"}
+    bad = dict(good, extra=[1, 2], stray="x")   # extra not a dict + unknown key
+    src.write_text(json.dumps(good) + "\n" + json.dumps(bad) + "\n", encoding="utf-8")
+    p = subprocess.run([PY, str(REPO / "scripts/format/normalize.py"), str(src), "-o", "-"],
+                       capture_output=True, text=True)
+    assert p.returncode != 0
+    assert "line 2" in p.stderr                 # located, one-line error
+    assert "Traceback" not in p.stderr          # not a raw AttributeError
+
+
+# ── lora: ShareGPT variants with bare turn-lists must load, not crash ────────
+
+def test_lora_load_pairs_accepts_wrapped_and_bare_examples(tmp_path):
+    sys.path.insert(0, str(REPO / "scripts" / "train"))
+    import lora_train
+
+    wrapped = {"conversations": [
+        {"from": "system", "value": "be yourself"},
+        {"from": "human", "value": "you up?"},
+        {"from": "gpt", "value": "barely lol"},
+    ]}
+    bare = [
+        {"from": "human", "value": "lunch?"},
+        {"from": "gpt", "value": "omw"},
+    ]
+    no_target = {"conversations": [{"from": "human", "value": "hello?"}]}
+    src = tmp_path / "train.json"
+    src.write_text(json.dumps([wrapped, bare, no_target]), encoding="utf-8")
+    pairs = lora_train.load_pairs(str(src))
+    assert len(pairs) == 2                       # no_target dropped, bare kept
+    assert pairs[0]["completion"] == [{"role": "assistant", "content": "barely lol"}]
+    assert pairs[1]["prompt"] == [{"role": "user", "content": "lunch?"}]
+    assert pairs[1]["completion"] == [{"role": "assistant", "content": "omw"}]
+
+
 # ── serving: --batch must survive transient API errors mid-run ───────────────
 
 def test_batch_retries_and_skips_failed_rows(tmp_path):

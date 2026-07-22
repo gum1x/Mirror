@@ -165,7 +165,9 @@ def read_jsonl(path: str, skip_bad: bool = False) -> Iterator[MessageRecord]:
                     rec = MessageRecord.from_dict(obj)
                 except SchemaError as e:
                     problem = str(e)
-                except TypeError as e:  # unexpected shapes (e.g. extra not a dict)
+                except (TypeError, AttributeError) as e:
+                    # unexpected shapes — e.g. extra not a dict (AttributeError
+                    # when unknown keys are merged into it)
                     problem = f"not a valid record ({e})"
                 else:
                     yield rec
