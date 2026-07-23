@@ -3,11 +3,13 @@
 [![CI](https://github.com/gum1x/Mirror/actions/workflows/ci.yml/badge.svg)](https://github.com/gum1x/Mirror/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+A framework that trains an AI to speak, answer, and "think" like you.
+
 Mirror pulls your real conversations out of the apps you already use: iMessage, WhatsApp, Telegram, Gmail, Slack, Discord, Instagram, SMS. It works out how you actually write, down to message length, punctuation, emoji, slang, and the way you explain things. Then it picks a training method that fits your data and your privacy comfort, trains, and scores the result on conversations it never saw. What you end up with answers the way you would, grounded in things you've actually said. Not a generic chatbot wearing your name.
 
 Nine skills, twenty-two scripts, and a core pipeline that runs on the Python standard library alone.
 
-> Built with AI assistance (Anthropic's Claude). I've reviewed and tested it, but read the code before running it on your own data, and treat the privacy notes as guidance, not a guarantee.
+> Built with AI assistance. Everything has been reviewed and tested. Nevertheless, Please read the code before running it on your own data, and treat the privacy notes as guidance, not as a guarantee.
 
 
 ## How it works
@@ -38,7 +40,7 @@ training ──▶ evaluation ──▶ deploy
 
 ## Privacy and safety
 
-- Local by default. Parsing, scrubbing, and dataset building happen on your machine. Nothing leaves until you pick a path that needs it.
+- Local by default. parsing, scrubbing, and dataset building all happen on your machine. nothing leaves until you pick a path that needs it.
 - You're told before data leaves. Path A sends retrieved snippets plus your style card to Anthropic, Path B uploads your dataset to OpenAI, Path C sends nothing. Mirror says which one applies and asks first.
 - PII scrubbing runs before any upload (`scripts/format/pii_scrub.py`): emails, phone numbers, cards, SSNs, IPs, basic street addresses, and any custom terms you add. It is regex-based and best-effort, so look at the output and add your own terms for names and anything unusual.
 - Consent matters. Group chats contain other people's words. Mirror only trains on your messages; everyone else is context. Don't point it at a real conversation to deceive someone.
@@ -62,13 +64,11 @@ Cloning yourself from chat history is well-trodden ground, and Mirror leans on a
 
 Most of these build on [Unsloth](https://github.com/unslothai/unsloth), [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory), or [Axolotl](https://github.com/axolotl-ai-cloud/axolotl).
 
-Where Mirror differs: it reads from several apps into one schema instead of a single source, it picks a training method from your answers instead of defaulting to a 7B LoRA, and it reports a style-match score on a held-out set instead of relying on an eyeball check. The trade-off is more moving parts. If you only care about one source and one model, one of the projects above is probably the simpler choice.
+Where Mirror differs: it reads from several apps into one schema instead of a single source, it picks a training method from your answers instead of defaulting to a 7B LoRA, and it reports a style match score on a held out set instead of relying on an eyeball check. The trade off is more moving parts. If you only care about one source and one model, one of the projects above is probably the simpler choice.
 
-Things it borrows from the field and the wider community: time-gap session windowing (like doppelganger and Izzy Miller), keeping train and eval separate, dataset cards for provenance, seeded splits, merging consecutive messages into one turn, and ShareGPT / OpenAI-chat / ChatML / DPO output formats. The reasoning behind the defaults is in `skills/mirror-model-selection/references`.
+Things it borrows from the field and the wider community: time gap session windowing (like doppelganger and Izzy Miller), keeping train and eval separate, dataset cards for provenance, seeded splits, merging consecutive messages into one turn, and ShareGPT / OpenAI-chat / ChatML / DPO output formats. The reasoning behind the defaults is in `skills/mirror-model-selection/references`.
 
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-Use it on your own data, for yourself.
