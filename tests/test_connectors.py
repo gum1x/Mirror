@@ -462,6 +462,148 @@ def test_gmail_html_numeric_entities_unescaped(tmp_path):
     assert "We’ll meet & talk soon" in recs[0]["text"]
 
 
+# ── WhatsApp: es/pt "p. m." meridiem must not corrupt sender/direction/time ──
+
+def test_whatsapp_spanish_meridiem_and_zero_mine_warning(tmp_path):
+    f = tmp_path / "WhatsApp Chat with Alex.txt"
+    f.write_text(
+        "[5/3/24, 9:41:12 p. m.] Sam: hola que tal\n"
+        "[5/3/24, 9:42:00 p. m.] Alex: todo bien\n"
+        "[6/3/24, 12:15:00 a. m.] Sam: ya es tarde\n",
+        encoding="utf-8")
+    recs, _ = run("scripts/connectors/whatsapp_parse.py", f, "--me", "Sam", "--dayfirst")
+    assert [r["text"] for r in recs] == ["hola que tal", "todo bien", "ya es tarde"]
+    mine = [r for r in recs if r["is_from_me"]]
+    assert len(mine) == 2                     # ". m.] Sam" used to break --me matching
+    assert mine[0]["sender"] == "me"
+    assert recs[0]["timestamp"] == "2024-03-05T21:41:12Z"   # PM offset applied
+    assert recs[2]["timestamp"] == "2024-03-06T00:15:00Z"   # 12 a.m. -> 00:15
+    # wrong --me must warn instead of silently building a target-less dataset
+    _, err = run("scripts/connectors/whatsapp_parse.py", f, "--me", "Nadie", "--dayfirst")
+    assert "0 of your messages" in err and "Sam" in err
+
+
+# ── conversation-id collisions: same display name ≠ same conversation ────────
+
+def test_instagram_same_title_threads_stay_separate(tmp_path):
+    inbox = tmp_path / "inbox"
+    for folder, text in [("alex_111", "hey its alex smith"),
+                         ("alex_222", "hey its alex jones")]:
+        d = inbox / folder
+        d.mkdir(parents=True)
+        (d / "message_1.json").write_text(json.dumps({
+            "title": "Alex",
+            "messages": [{"sender_name": "Alex", "timestamp_ms": 1709675400000,
+                          "content": text}],
+        }), encoding="utf-8")
+    recs, _ = run("scripts/connectors/instagram_parse.py", inbox, "--me", "Sam")
+    convos = {r["conversation_id"] for r in recs}
+    assert len(convos) == 2, "two different people named Alex merged into one thread"
+    assert "Alex" in convos                    # first keeps the clean name
+
+
+def test_telegram_same_name_chats_stay_separate(tmp_path):
+    res = tmp_path / "result.json"
+    res.write_text(json.dumps({"chats": {"list": [
+        {"name": "Alex", "id": 111, "messages": [
+            {"id": 1, "type": "message", "date_unixtime": "1712049720",
+             "from": "Alex", "from_id": "user111", "text": "its alex smith"}]},
+        {"name": "Alex", "id": 222, "messages": [
+            {"id": 2, "type": "message", "date_unixtime": "1712049730",
+             "from": "Alex", "from_id": "user222", "text": "its alex jones"}]},
+    ]}}), encoding="utf-8")
+    recs, _ = run("scripts/connectors/telegram_parse.py", res, "--me", "Sam")
+    convos = {r["conversation_id"] for r in recs}
+    assert convos == {"Alex", "Alex (222)"}
+
+
+# ── generic JSON import: stringly booleans and epoch timestamps ──────────────
+
+def test_imessage_json_stringly_bools_and_epoch_timestamps(tmp_path):
+    f = tmp_path / "msgs.json"
+    f.write_text(json.dumps([
+        {"text": "not mine", "is_from_me": "false", "chat": "Alex",
+         "date": 1709675400000},                        # epoch ms
+        {"text": "also not mine", "is_from_me": "0", "chat": "Alex",
+         "date": 1709675401},                           # epoch s
+        {"text": "mine", "is_from_me": "true", "chat": "Alex",
+         "timestamp": "2024-03-05T21:42:00Z"},
+    ]), encoding="utf-8")
+    recs, _ = run("scripts/connectors/imessage_extract.py", f, "--from-json")
+    assert [r["is_from_me"] for r in recs] == [False, False, True]
+    assert recs[0]["timestamp"] == "2024-03-05T21:50:00Z"   # ms converted, not leaked
+    assert recs[1]["timestamp"] == "2024-03-05T21:50:01Z"   # s converted
+    assert recs[2]["timestamp"] == "2024-03-05T21:42:00Z"
+
+
+# ── missing inputs: one-line errors, no tracebacks, no phantom files ─────────
+
+def test_missing_inputs_fail_cleanly_across_connectors(tmp_path):
+    cases = [
+        ("scripts/connectors/gmail_mbox_parse.py", [str(tmp_path / "nope.mbox")]),
+        ("scripts/connectors/whatsapp_parse.py",
+         [str(tmp_path / "nope.txt"), "--me", "Sam"]),
+        ("scripts/connectors/telegram_parse.py",
+         [str(tmp_path / "nope.json"), "--me", "Sam"]),
+        ("scripts/connectors/sms_xml_parse.py", [str(tmp_path / "nope.xml")]),
+        ("scripts/connectors/imessage_extract.py", [str(tmp_path / "nope.db")]),
+        ("scripts/connectors/discord_parse.py",
+         [str(tmp_path / "nope.json"), "--me-id", "7"]),
+        ("scripts/connectors/instagram_parse.py",
+         [str(tmp_path / "nope"), "--me", "Sam"]),
+    ]
+    for script, argv in cases:
+        p = subprocess.run([PY, str(REPO / script), *argv, "-o", "-"],
+                           capture_output=True, text=True)
+        assert p.returncode != 0, f"{script} exited 0 on a missing input"
+        assert "Traceback" not in p.stderr, f"{script} tracebacked:\n{p.stderr}"
+    # the old mailbox default CREATED the missing file on a typo'd path
+    assert not (tmp_path / "nope.mbox").exists()
+
+
+def test_imessage_garbage_db_fails_cleanly(tmp_path):
+    db = tmp_path / "chat.db"
+    db.write_bytes(b"this is not a sqlite database at all")
+    p = subprocess.run([PY, str(REPO / "scripts/connectors/imessage_extract.py"),
+                        str(db), "-o", "-"], capture_output=True, text=True)
+    assert p.returncode != 0
+    assert "Traceback" not in p.stderr
+
+
+def test_connector_creates_missing_output_dir(tmp_path):
+    f = tmp_path / "WhatsApp Chat with Pat.txt"
+    f.write_text("[2024-03-05, 9:41:12 PM] Sam: hello there\n", encoding="utf-8")
+    out = tmp_path / "data" / "raw" / "whatsapp.jsonl"   # data/raw/ doesn't exist yet
+    p = subprocess.run([PY, str(REPO / "scripts/connectors/whatsapp_parse.py"),
+                        str(f), "--me", "Sam", "-o", str(out)],
+                       capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    assert out.exists()
+
+
+# ── Instagram: system-line filter anchors on the sender's own name ───────────
+
+def test_instagram_system_filter_keeps_first_person_prose(tmp_path):
+    thread = tmp_path / "inbox" / "alex_123"
+    thread.mkdir(parents=True)
+    (thread / "message_1.json").write_text(json.dumps({
+        "title": "Alex",
+        "messages": [
+            {"sender_name": "Sam", "timestamp_ms": 1709675400000,
+             "content": "sorry i reacted so badly to your message"},   # real prose
+            {"sender_name": "Sam", "timestamp_ms": 1709675410000,
+             "content": "i sent an attachment."},                      # real prose
+            {"sender_name": "Sam", "timestamp_ms": 1709675420000,
+             "content": "Sam sent an attachment."},                    # system notice
+            {"sender_name": "Alex", "timestamp_ms": 1709675430000,
+             "content": "Alex reacted ❤ to your message"},        # system notice
+        ],
+    }), encoding="utf-8")
+    recs, _ = run("scripts/connectors/instagram_parse.py", tmp_path / "inbox", "--me", "Sam")
+    assert [r["text"] for r in recs] == ["sorry i reacted so badly to your message",
+                                         "i sent an attachment."]
+
+
 def test_slack_keeps_thread_broadcast(tmp_path):
     # thread_broadcast is a real message you posted ("also send to channel") —
     # it must not be dropped with the system/bot subtypes.

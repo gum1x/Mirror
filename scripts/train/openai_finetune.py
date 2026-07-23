@@ -173,6 +173,9 @@ def run_job(path: str, base: str, method: str, suffix: str, epochs) -> None:
     else:
         print(f"\n❌ Job {job.status}. Inspect: client.fine_tuning.jobs.list_events('{job.id}')",
               file=sys.stderr)
+        # Exit nonzero so a scripted pipeline doesn't march on serving a model
+        # that was never produced.
+        sys.exit(1)
 
 
 def main() -> None:

@@ -61,11 +61,19 @@ def _find_llama_cpp_converter() -> str | None:
     return None
 
 
+def _find_quantizer() -> str | None:
+    for name in ("llama-quantize", "quantize"):  # new + legacy binary names
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
 def to_gguf(merged_dir: str, quant: str) -> str | None:
     conv = _find_llama_cpp_converter()
     gguf_path = os.path.join(merged_dir, "model.gguf")
+    quant_path = os.path.join(merged_dir, f"model.{quant}.gguf")
     if not conv:
-        quant_path = os.path.join(merged_dir, f"model.{quant}.gguf")
         print("\nllama.cpp converter not found. To make a GGUF:\n"
               "  git clone https://github.com/ggerganov/llama.cpp\n"
               f"  python llama.cpp/convert_hf_to_gguf.py {merged_dir} --outfile {gguf_path}\n"
@@ -78,8 +86,23 @@ def to_gguf(merged_dir: str, quant: str) -> str | None:
     except subprocess.CalledProcessError as e:
         print(f"GGUF conversion failed ({e}); see llama.cpp docs.", file=sys.stderr)
         return None
-    print(f"✅ GGUF → {gguf_path}", file=sys.stderr)
-    return gguf_path
+    print(f"✅ GGUF (f16) → {gguf_path}", file=sys.stderr)
+    # --quant must actually quantize, not just name a file: run llama-quantize
+    # when it's on PATH, otherwise hand back the f16 with exact instructions.
+    quantizer = _find_quantizer()
+    if not quantizer:
+        print(f"llama-quantize not found — keeping the (much larger) f16 GGUF.\n"
+              f"  To quantize:  llama-quantize {gguf_path} {quant_path} {quant}",
+              file=sys.stderr)
+        return gguf_path
+    print(f"Quantizing to {quant} via {quantizer} …", file=sys.stderr)
+    try:
+        subprocess.run([quantizer, gguf_path, quant_path, quant], check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Quantization failed ({e}); keeping the f16 GGUF.", file=sys.stderr)
+        return gguf_path
+    print(f"✅ GGUF ({quant}) → {quant_path}", file=sys.stderr)
+    return quant_path
 
 
 def write_modelfile(merged_dir: str, gguf_path: str | None, style_card: str | None,

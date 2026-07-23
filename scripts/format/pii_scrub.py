@@ -38,15 +38,25 @@ BUILTINS = [
     ("<SSN>", r"\b\d{3}-\d{2}-\d{4}\b|(?<!\w)\d{9}(?!\w)"),          # dashed or bare 9 digits
     ("<IP>", r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
     ("<DOB>", r"\b(?:0?[1-9]|1[0-2])[/-](?:0?[1-9]|[12]\d|3[01])[/-](?:19|20)\d\d\b"),
-    ("<ADDRESS>", r"\b\d{1,5}\s+(?:[A-Za-z]+\.?\s+){1,4}"
+    # Intermediate words exclude duration/distance nouns so everyday phrases
+    # ("ran 2 hours way over", "a 3 minute drive") don't become <ADDRESS>.
+    ("<ADDRESS>", r"\b\d{1,5}\s+"
+                  r"(?:(?!(?:hours?|hrs?|minutes?|mins?|seconds?|secs?|days?"
+                  r"|weeks?|months?|years?|miles?|km|blocks?)\b)[A-Za-z]+\.?\s+){1,4}"
                   r"(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Ln|Lane|Dr|Drive|"
                   r"Ct|Court|Way|Pl|Place|Ter|Terrace|Hwy|Highway)\b\.?"),
-    # Phone, consuming the whole token so no prefix leaks. Alternatives:
-    # separated digit groups (>=2 so bare ids don't match) · contiguous
-    # international with '+' (E.164, how iMessage/WhatsApp render numbers) ·
-    # compact US 10/11 digit · dashed area-number and 7-digit local forms.
-    # Bare 7-8 digit runs stay (order ids); bare 9 digit runs are <SSN> above.
-    ("<PHONE>", r"(?<!\w)(?:\+?\(?\d{1,4}\)?(?:[ .\-]\d{2,4}){2,4}"
+    # Phone, consuming the whole token so no prefix leaks. The leading guard
+    # skips date-shaped tokens (2024-03-05, 05.03.2024) that the separated-
+    # groups form would otherwise redact as phone numbers. Alternatives:
+    # separated digit groups (>=2 so bare ids don't match), with an optional
+    # parenthesized area code so "+1 (555) 123-4567" is consumed whole ·
+    # contiguous international with '+' (E.164, how iMessage/WhatsApp render
+    # numbers) · compact US 10/11 digit · dashed area-number and 7-digit local
+    # forms. Bare 7-8 digit runs stay (order ids); bare 9 digits are <SSN>.
+    ("<PHONE>", r"(?<!\w)"
+                r"(?!(?:\d{4}[ .\-/]\d{1,2}[ .\-/]\d{1,2}"
+                r"|\d{1,2}[ .\-/]\d{1,2}[ .\-/](?:19|20)\d\d)(?!\w))"
+                r"(?:\+?\(?\d{1,4}\)?(?:[ .\-]?\(\d{1,5}\))?(?:[ .\-]\d{2,4}){2,4}"
                 r"|\+\d{7,15}|1?\d{10}|\d{3,4}-\d{6,8}|\d{3}-\d{4})(?!\w)"),
 ]
 
@@ -128,8 +138,16 @@ def main() -> None:
     ap.add_argument("-o", "--output", default="-", help="Output .jsonl (default stdout).")
     args = ap.parse_args()
 
+    # An empty term (classic unset shell variable: --custom "$MY_NAME") would
+    # match at EVERY position and interleave <REDACTED> between all characters.
+    custom = [t for t in args.custom if t.strip()]
+    if len(custom) != len(args.custom):
+        print("⚠️  ignoring empty --custom term(s) — unset shell variable?",
+              file=sys.stderr)
+        args.custom = custom  # keep the manifest's custom_terms_count honest
+
     counts: Counter = Counter()
-    master, tags = build_scrubber(args.custom)
+    master, tags = build_scrubber(custom)
     if args.report:
         for _ in scrub(args.inputs, master, tags, counts):
             pass

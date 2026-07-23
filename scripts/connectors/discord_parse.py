@@ -68,6 +68,8 @@ def main() -> None:
     args = ap.parse_args()
     if not args.me and not args.me_id:
         ap.error("provide --me or --me-id so we can flag your messages.")
+    if not os.path.exists(args.input):
+        ap.error(f"input not found: {args.input}")
 
     files = (sorted(glob.glob(os.path.join(args.input, "*.json")))
              if os.path.isdir(args.input) else [args.input])

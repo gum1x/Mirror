@@ -12,7 +12,6 @@ import argparse
 import glob
 import json
 import os
-import re
 import sys
 from collections.abc import Iterator
 from datetime import datetime, timezone
@@ -20,11 +19,17 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.schema import MessageRecord, iso_utc, write_jsonl  # noqa: E402
 
-# Meta's English system/placeholder lines. Anchored to the whole line so they
-# only drop the auto-generated notices, not real prose that happens to end the
-# same way (e.g. "i keep coming back to your message").
-SYSTEM_LINE = re.compile(
-    r"^.+ sent an attachment\.$|^.+ reacted .* to your message$")
+
+def _is_system_line(content: str, sender: str) -> bool:
+    """Meta's English system notices ALWAYS begin with the sender's own name
+    ("Alex sent an attachment.", "Alex reacted ❤️ to your message"). Anchoring
+    on the name keeps real prose that merely matches the shape — "i sent an
+    attachment." or "sorry i reacted so badly to your message" are messages."""
+    if not sender or not content.startswith(sender):
+        return False
+    rest = content[len(sender):]
+    return rest == " sent an attachment." or (
+        rest.startswith(" reacted ") and rest.endswith(" to your message"))
 
 
 def _fix_mojibake(s: str) -> str:
@@ -35,21 +40,31 @@ def _fix_mojibake(s: str) -> str:
         return s
 
 
-def parse_thread(path: str, me: list[str], source: str) -> Iterator[MessageRecord]:
+def parse_thread(path: str, me: list[str], source: str,
+                 title_owner: dict | None = None) -> Iterator[MessageRecord]:
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
 
-    title = _fix_mojibake(data.get("title", "")) or os.path.basename(os.path.dirname(path))
+    # Meta titles are just display names — two different people called "Alex"
+    # produce two threads with the same title, which would interleave into one
+    # fake conversation downstream. The thread FOLDER name is unique; use it to
+    # disambiguate when (and only when) a second folder claims the same title.
+    folder = os.path.basename(os.path.dirname(os.path.abspath(path)))
+    title = _fix_mojibake(data.get("title", "")) or folder
+    if title_owner is not None:
+        owner = title_owner.setdefault(title, folder)
+        if owner != folder:
+            title = f"{title} ({folder})"
     me_lower = {m.lower() for m in me}
     for msg in data.get("messages", []):
         # Judge by the text, not by media keys: a photo/share sent WITH a
         # caption keeps the caption (your words); media without text has no
         # 'content' and is dropped here.
         content = _fix_mojibake(msg.get("content") or "").strip()
-        # Drop Meta's system/placeholder lines.
-        if not content or SYSTEM_LINE.match(content):
-            continue
         sender = _fix_mojibake(msg.get("sender_name", "")).strip()
+        # Drop Meta's system/placeholder lines.
+        if not content or _is_system_line(content, sender):
+            continue
         is_me = sender.lower() in me_lower
         ts = None
         if msg.get("timestamp_ms"):
@@ -75,6 +90,8 @@ def main() -> None:
     ap.add_argument("-o", "--output", default="-", help="Output .jsonl (default stdout).")
     args = ap.parse_args()
 
+    if not os.path.exists(args.input):
+        ap.error(f"input not found: {args.input}")
     if os.path.isdir(args.input):
         files = sorted(glob.glob(os.path.join(args.input, "**", "message_*.json"), recursive=True))
     else:
@@ -82,12 +99,14 @@ def main() -> None:
     if not files:
         ap.error(f"no message_*.json found under {args.input}")
 
+    title_owner: dict = {}
+
     def gen() -> Iterator[MessageRecord]:
         for f in files:
             # One corrupt/truncated export must not abort a whole-folder run and
             # throw away every other thread's output.
             try:
-                yield from parse_thread(f, args.me, args.source)
+                yield from parse_thread(f, args.me, args.source, title_owner)
             except (json.JSONDecodeError, OSError) as e:
                 print(f"⚠️  skipping {f}: {e}", file=sys.stderr)
 

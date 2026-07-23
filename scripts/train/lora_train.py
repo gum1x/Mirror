@@ -30,8 +30,14 @@ def load_pairs(path: str) -> list[dict]:
     convos = data if isinstance(data, list) else data.get("conversations", [])
     out = []
     for ex in convos:
-        msgs = [{"role": ROLE_MAP.get(c["from"], "user"), "content": c["value"]}
-                for c in ex.get("conversations", [])]
+        # Accept both shapes: {"conversations": [...]} (what build_dataset
+        # writes) and a bare list of {"from","value"} turns (other ShareGPT
+        # tools) — the latter used to crash with AttributeError.
+        turns = ex.get("conversations", []) if isinstance(ex, dict) else ex
+        if not isinstance(turns, list):
+            continue
+        msgs = [{"role": ROLE_MAP.get(c.get("from"), "user"), "content": c.get("value", "")}
+                for c in turns if isinstance(c, dict)]
         if len(msgs) < 2 or msgs[-1]["role"] != "assistant":
             continue
         out.append({"prompt": msgs[:-1], "completion": [msgs[-1]]})

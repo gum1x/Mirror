@@ -22,11 +22,14 @@ from lib.schema import MessageRecord, iso_utc, write_jsonl  # noqa: E402
 
 # Line starting a new message: optional LTR mark, optional [, date, time,
 # optional ], optional dash, then "Sender: message" (or a system line).
+# The meridiem must cover the es/pt "p. m." / "a. m." forms too — stopping at
+# the lone "p" leaves ". m.] Sam" in <rest>, which corrupts the sender (so
+# --me never matches), the direction, AND drops the 12-hour offset.
 LINE_RE = re.compile(
     r"^‎?\[?"
     r"(?P<date>\d{1,4}[./-]\d{1,2}[./-]\d{1,4})"
     r",?\s+"
-    r"(?P<time>\d{1,2}:\d{2}(?::\d{2})?\s*[APMapm]{0,2})"
+    r"(?P<time>\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap]\.?\s?[Mm]\.?)?)"
     r"\]?\s*[-–]?\s*"
     r"(?P<rest>.*)$"
 )
@@ -51,6 +54,8 @@ def _norm_spaces(s: str) -> str:
 
 def _parse_dt(date_s: str, time_s: str, dayfirst: bool, tz: str | None = None) -> str | None:
     date_s, time_s = _norm_spaces(date_s).strip(), _norm_spaces(time_s).strip().upper()
+    # "p. m." / "P.M." (es/pt exports) → "PM" so the meridiem regex below sees it
+    time_s = re.sub(r"([AP])\.?\s*M\.?", r"\1M", time_s)
     parts = re.split(r"[./-]", date_s)
     if len(parts) != 3:
         return None
@@ -180,12 +185,28 @@ def main() -> None:
     ap.add_argument("-o", "--output", default="-", help="Output .jsonl (default stdout).")
     args = ap.parse_args()
 
+    if not os.path.exists(args.input):
+        ap.error(f"input not found: {args.input}")
+
+    counts = {"mine": 0}
+    seen: set[str] = set()
+
     def all_records() -> Iterator[MessageRecord]:
         for f in iter_inputs(args.input):
-            yield from parse_file(f, args.me, args.dayfirst, args.tz)
+            for rec in parse_file(f, args.me, args.dayfirst, args.tz):
+                counts["mine"] += int(rec.is_from_me)
+                if not rec.is_from_me:
+                    seen.add(rec.sender)
+                yield rec
 
     n = write_jsonl(all_records(), args.output)
-    print(f"Wrote {n} messages → {args.output}", file=sys.stderr)
+    print(f"Wrote {n} messages ({counts['mine']} from you) → {args.output}", file=sys.stderr)
+    if n and not counts["mine"]:
+        # Same guard the telegram connector has: a wrong --me otherwise builds
+        # a dataset with zero assistant targets, silently.
+        print("⚠️  Found 0 of your messages. Senders seen: "
+              + ", ".join(sorted(seen)[:20]), file=sys.stderr)
+        print("   Re-run with --me set to your exact name above.", file=sys.stderr)
 
 
 if __name__ == "__main__":

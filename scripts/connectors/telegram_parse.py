@@ -86,8 +86,18 @@ def parse(path: str, me: list[str], me_id: str | None, tz: str | None
         default_convo = os.path.basename(os.path.dirname(os.path.abspath(path))) or "telegram"
 
     def gen() -> Iterator[MessageRecord]:
+        # Two different chats can share a display name (two contacts named
+        # "Alex"). Keying only on the name would interleave their messages
+        # into one fake conversation downstream, so disambiguate on collision.
+        name_owner: dict[str, object] = {}
         for chat in _chats(data):
-            convo = chat.get("name") or (str(chat["id"]) if chat.get("id") else default_convo)
+            cid = chat.get("id")
+            name = chat.get("name")
+            convo = name or (str(cid) if cid is not None else default_convo)
+            if name:
+                owner = name_owner.setdefault(name, cid)
+                if owner != cid and cid is not None:
+                    convo = f"{name} ({cid})"
             for msg in chat.get("messages", []):
                 if msg.get("type") != "message":
                     continue
@@ -122,6 +132,8 @@ def main() -> None:
 
     if not args.me and not args.me_id:
         ap.error("provide --me and/or --me-id so we can flag your messages.")
+    if not os.path.exists(args.input):
+        ap.error(f"input not found: {args.input}")
 
     records, seen = parse(args.input, args.me, args.me_id, args.tz)
     # Count while streaming: materializing every record doubled peak memory on

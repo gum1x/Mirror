@@ -86,6 +86,12 @@ class MessageRecord:
             raise SchemaError(f"is_from_me must be true/false, got {d['is_from_me']!r}")
         if not isinstance(d["text"], str):
             raise SchemaError(f"text must be a string, got {type(d['text']).__name__}")
+        ts = d.get("timestamp")
+        if ts is not None and not isinstance(ts, str):
+            # an epoch number here would crash the dataset builder much later,
+            # with a raw traceback instead of a located one-line error
+            raise SchemaError("timestamp must be an ISO-8601 string or null, "
+                              f"got {type(ts).__name__}")
         known = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
         extra = {k: v for k, v in d.items() if k not in known}
         base = {k: v for k, v in d.items() if k in known}
@@ -116,6 +122,9 @@ def write_jsonl(records: Iterable[MessageRecord], path: str) -> int:
             sys.stdout.write(rec.to_json() + "\n")
             n += 1
         return n
+    # The documented first command writes to data/raw/<source>.jsonl on a fresh
+    # checkout — create the directory instead of tracebacking on it.
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     tmp = path + ".tmp"
     try:
         with open(tmp, "w", encoding="utf-8") as out:
@@ -165,7 +174,9 @@ def read_jsonl(path: str, skip_bad: bool = False) -> Iterator[MessageRecord]:
                     rec = MessageRecord.from_dict(obj)
                 except SchemaError as e:
                     problem = str(e)
-                except TypeError as e:  # unexpected shapes (e.g. extra not a dict)
+                except (TypeError, AttributeError) as e:
+                    # unexpected shapes — e.g. extra not a dict (AttributeError
+                    # when unknown keys are merged into it)
                     problem = f"not a valid record ({e})"
                 else:
                     yield rec

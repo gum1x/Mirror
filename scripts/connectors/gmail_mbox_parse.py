@@ -93,7 +93,12 @@ def _body(msg) -> str:
 
 def parse(path: str, me: list[str], match_from: bool) -> Iterator[MessageRecord]:
     me_lower = {m.lower() for m in me}
-    box = mailbox.mbox(path)
+    try:
+        # create=False: the default CREATES a missing mailbox, so a typo'd path
+        # "succeeded" with 0 emails and left an empty .mbox behind.
+        box = mailbox.mbox(path, create=False)
+    except (mailbox.NoSuchMailboxError, FileNotFoundError, OSError) as e:
+        sys.exit(f"Input mbox not found: {path} ({e})")
     for msg in box:
         # A real Sent message always has From/To headers; a record with neither
         # is junk from a mis-split envelope — skip it rather than emit garbage.
